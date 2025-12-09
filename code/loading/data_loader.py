@@ -28,10 +28,11 @@ import pandas as pd
 # -----------------------------
 # 로컬 모듈
 # -----------------------------
-from .zip_streamer import ZipStreamer
-from .flattener import Flattener
-from .parquet_writer import ParquetWriter
-from .schema_collector import SchemaCollector
+from code.loading.zip_streamer import ZipStreamer
+from code.loading.flattener import Flattener
+from code.loading.parquet_writer import ParquetWriter
+from code.loading.schema_collector import SchemaCollector
+
 
 
 # -----------------------------
@@ -264,12 +265,11 @@ class DataLoader:
 
         raise ValueError(f"지원하지 않는 어댑터입니다: {target_adapter}")
 
-
 # ============ 사용 예시 ============
 if __name__ == '__main__':
     loader = DataLoader(
-        start=2020,
-        end=2025,
+        start=2024,
+        end=2024,
         output_file='output.parquet',
         max_workers=4
     )
