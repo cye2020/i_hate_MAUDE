@@ -220,3 +220,7 @@ __marimo__/
 
 # 임시 파일 or 디렉토리
 temp*
+
+# vscode
+
+.vscode
