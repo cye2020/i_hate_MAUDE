@@ -53,6 +53,7 @@ class DataLoader:
     SEARCH_URL = 'https://api.fda.gov/download.json'
     
     def __init__(self, 
+        name: str,
         start: int,
         end: int,
         output_file: str = 'output.parquet',
@@ -60,6 +61,7 @@ class DataLoader:
         max_workers: int = 4,
         adapter: DatasetAdapter = DatasetAdapter.PANDAS
     ) -> None:
+        self.name = name
         self.start = start
         self.end = end
         self.output_file = output_file
@@ -72,13 +74,16 @@ class DataLoader:
     def search_download_url(self) -> List[str]:
         """다운로드 URL 목록 조회"""
         response = requests.get(self.SEARCH_URL).json()
-        partitions = response['results']['device']['event']['partitions']
+        partitions = response['results']['device'][self.name]['partitions']
         
         urls = []
         for item in partitions:
-            first = item['display_name'].split()[0]
-            if first.isdigit() and self.start <= int(first) <= self.end:
-                urls.append(item["file"])
+            if self.start and self.end:
+                first = item['display_name'].split()[0]
+                if first.isdigit() and self.start <= int(first) <= self.end:
+                    urls.append(item["file"])
+            else:
+                urls.append(item['file'])
         return urls
     
     def _collect_schema_worker(self, url: str) -> Tuple[str, set, int]:
@@ -268,6 +273,7 @@ class DataLoader:
 # ============ 사용 예시 ============
 if __name__ == '__main__':
     loader = DataLoader(
+        name='event',
         start=2024,
         end=2024,
         output_file='output.parquet',
