@@ -4,9 +4,11 @@ from code.loading import DataLoader
 def main():
     parser = argparse.ArgumentParser(description="DataLoader CLI")
 
-    parser.add_argument("--start", "-s", type=int, required=True,
+    parser.add_argument("--name", "-n", type=int, default='event',
+                        help="Raw Data Name")
+    parser.add_argument("--start", "-s", type=int,
                         help="Start year (e.g., 2020)")
-    parser.add_argument("--end", "-e", type=int, required=True,
+    parser.add_argument("--end", "-e", type=int,
                         help="End year (e.g., 2025)")
     parser.add_argument("--output-file", "-o", type=str, required=True,
                         help="Output file path (e.g., output.parquet)")
