@@ -212,11 +212,10 @@ class PreprocessorPresets:
             (r'.*\bNINF\b.*', 'DELETE', 'NINF'),
             (r'.*\bUNC\b.*', 'DELETE', 'UNC'),
             (r'.*\bDER\b.*', 'DELETE', 'DER'),
+            (r'^0+$', 'DELETE', '모두 0'),
             (r'^\s*$', 'DELETE', '빈 문자열'),
-            (r'^.$', 'DELETE', '1자'), 
             
             # REMOVE 패턴 - 범용 공백/기호
-            (r'\s+', 'REMOVE', '중복 공백'),
             (r'^\s+', 'REMOVE', '시작 공백'),
             (r'\s+$', 'REMOVE', '끝 공백'),
         ]
@@ -230,7 +229,6 @@ class PreprocessorPresets:
         udi_deletes = [
             (r'^.{2,3}$', 'DELETE', '2-3자'),  # 1자는 generic에 있으므로 2-3자만
             (r'^.{31,}$', 'DELETE', '31자 이상'),
-            (r'^0+$', 'DELETE', '모두 0'),
             (r'^N$', 'DELETE', '단일 문자 N'),
             (r'^X+$', 'DELETE', 'X 반복'),
             (r'.*\$\$.*', 'DELETE', '$$'),
@@ -241,8 +239,8 @@ class PreprocessorPresets:
         udi_removes = [
             (r'\(\d{2}\)', 'REMOVE', 'GS1 AI'),
             (r'^\d*\+', 'REMOVE', 'HIBCC 접두어'),
-            (r'[\[\]{}<>"\']+', 'REMOVE', '괄호/따옴표'),
-            (r'[,\-_;\\/\$@#&*+]+', 'REMOVE', '특수기호'),
+            (r'\s+', 'REMOVE', '공백'),
+            (r'[^a-zA-Z0-9]', 'REMOVE', '영숫자 외 모든 문자'),
         ]
         
         return patterns + udi_deletes + udi_removes
@@ -267,7 +265,7 @@ class PreprocessorPresets:
             (r'\b(PTY\.?)\b', 'REMOVE', 'PTY'),
             (r'\b(PVT\.?)\b', 'REMOVE', 'PVT'),
             (r'\b(THE)\b', 'REMOVE', 'THE'),
-            (r'[,\.\-_&]+', 'REMOVE', '특수기호'),
+            (r'[^a-zA-Z0-9\s&]', 'REMOVE', '허용된 문자 외 제거'),
         ]
         
         return patterns + company_removes
@@ -279,6 +277,7 @@ class PreprocessorPresets:
         
         # 텍스트 특화 DELETE 패턴 (도메인별 특수 코드)
         text_deletes = [
+            # (r'^.$', 'DELETE', '1자'), 
         ]
         
         # 텍스트 특화 REMOVE 패턴
@@ -342,7 +341,7 @@ if __name__ == "__main__":
     print("\n[예시 1] UDI 전처리")
     udi_preprocessor = create_udi_preprocessor()
     
-    udi_tests = ['UNKNOWN', '0+M724CCB541', '00012345678901', 'NULL', '  123  ']
+    udi_tests = ['UNKNOWN', '0+M724CCB541', '00012345678901', 'NULL', '  123  ', '00000000000000']
     for udi in udi_tests:
         cleaned = udi_preprocessor.clean(udi)
         print(f"  {udi:<30} → {cleaned}")
@@ -357,6 +356,8 @@ if __name__ == "__main__":
         'Samsung Electronics Co., Ltd.',
         'Microsoft Corporation',
         'The Coca-Cola Company',
+        'A & B Company',
+        "'POLARSTEM¿'",
         'UNKNOWN'
     ]
     for company in company_tests:
@@ -384,7 +385,8 @@ if __name__ == "__main__":
     data = {
         'id': range(100),
         'udi': ['00012345678901', 'UNKNOWN', '0+M724', None] * 25,
-        'company': ['Apple Inc.', 'Google LLC', 'UNKNOWN', 'Samsung Co.'] * 25
+        'company': ['Apple Inc.', 'Google LLC', 'UNKNOWN', 'Samsung Co.'] * 25, 
+        'brand': ['\'POLARSTEM¿\'', 'Google LLC', 'UNKNOWN', 'Samsung Co.'] * 25
     }
     lf = pl.LazyFrame(data)
     
@@ -404,7 +406,7 @@ if __name__ == "__main__":
     lf_cleaned = pl.scan_parquet(udi_output)
     company_preprocessor.apply_to_lazyframe(
         lf=lf_cleaned,
-        columns='company',
+        columns=['company', 'brand'],
         output_path=company_output,
         chunk_size=50
     )
