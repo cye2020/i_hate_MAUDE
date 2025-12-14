@@ -358,6 +358,7 @@ if __name__ == "__main__":
         'The Coca-Cola Company',
         'A & B Company',
         "'POLARSTEM¿'",
+        'JOHNSON & JOHNSON SURGICAL VISION',
         'UNKNOWN'
     ]
     for company in company_tests:
