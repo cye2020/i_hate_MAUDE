@@ -10,7 +10,7 @@ from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 from tqdm import trange
 
-from code.utils import process_lazyframe_in_chunks, apply_mapping_to_columns
+from src.utils import process_lazyframe_in_chunks, apply_mapping_to_columns
 
 
 class TextPreprocessor:
@@ -273,16 +273,22 @@ class PreprocessorPresets:
     @staticmethod
     def generic_text_patterns() -> List[Tuple[str, str, str]]:
         """일반 텍스트 클린징 패턴 = Generic + 텍스트 특화"""
-        patterns = PreprocessorPresets._generic_patterns()
+        # patterns = PreprocessorPresets._generic_patterns()
+        patterns = []
         
         # 텍스트 특화 DELETE 패턴 (도메인별 특수 코드)
         text_deletes = [
-            # (r'^.$', 'DELETE', '1자'), 
+            (r'^.{,5}$', 'DELETE', '5자 이하'), 
+            (r'^0+$', 'DELETE', '모두 0'),
+            (r'^\s*$', 'DELETE', '빈 문자열'),
         ]
         
         # 텍스트 특화 REMOVE 패턴
         text_removes = [
             (r'[,;]+', 'REMOVE', '구분자'),
+            # REMOVE 패턴 - 범용 공백/기호
+            (r'^\s+', 'REMOVE', '시작 공백'),
+            (r'\s+$', 'REMOVE', '끝 공백'),
         ]
         
         return patterns + text_deletes + text_removes

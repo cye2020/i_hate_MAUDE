@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from IPython.display import display
 from tqdm import tqdm
 
-from code.utils import is_running_in_notebook
+from src.utils import is_running_in_notebook
 
 if not is_running_in_notebook():
     display = print

@@ -29,10 +29,10 @@ import pandas as pd
 # -----------------------------
 # 로컬 모듈
 # -----------------------------
-from code.loading.zip_streamer import ZipStreamer
-from code.loading.flattener import Flattener
-from code.loading.parquet_writer import ParquetWriter
-from code.loading.schema_collector import SchemaCollector
+from src.loading.zip_streamer import ZipStreamer
+from src.loading.flattener import Flattener
+from src.loading.parquet_writer import ParquetWriter
+from src.loading.schema_collector import SchemaCollector
 
 
 
