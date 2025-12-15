@@ -521,7 +521,7 @@ class UDIProcessor:
             self.udi_di_lookup.lazy(),
             left_on="udi_combined",
             right_on="udi_di",
-            how="left",
+            how="inner",  # ✅ 변경!
             suffix="_matched"
         ).select([
             'mfr_std',
@@ -537,20 +537,20 @@ class UDIProcessor:
             pl.lit("udi_direct").alias("udi_match_type"),
             pl.lit(3).alias("match_score")
         ])
-        
+
         primary_failed = unique_udi.join(
             primary_success.select("udi_combined"),
             on="udi_combined",
             how="anti"
         )
-        
+
         # Primary → parquet
         primary_path = self._new_temp_path("primary_matched.parquet")
         primary_success.sink_parquet(primary_path)
-        
+
         len_primary = pl.scan_parquet(primary_path).select(pl.len()).collect().item()
         print(f"   - Primary 직접 매칭: {len_primary:,} 건")
-        
+
         # ========== Case B: Secondary 매칭 ==========
         secondary_candidates = primary_failed.filter(
             pl.col("udi_combined").is_not_null()
