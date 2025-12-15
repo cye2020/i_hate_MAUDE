@@ -28,10 +28,11 @@ import pandas as pd
 # -----------------------------
 # 로컬 모듈
 # -----------------------------
-from .zip_streamer import ZipStreamer
-from .flattener import Flattener
-from .parquet_writer import ParquetWriter
-from .schema_collector import SchemaCollector
+from code.loading.zip_streamer import ZipStreamer
+from code.loading.flattener import Flattener
+from code.loading.parquet_writer import ParquetWriter
+from code.loading.schema_collector import SchemaCollector
+
 
 
 # -----------------------------
@@ -52,13 +53,15 @@ class DataLoader:
     SEARCH_URL = 'https://api.fda.gov/download.json'
     
     def __init__(self, 
-        start: int,
-        end: int,
+        name: str = 'device',
+        start: int = None,
+        end: int = None,
         output_file: str = 'output.parquet',
         schema_file: str = '.schema_cache.json',
         max_workers: int = 4,
         adapter: DatasetAdapter = DatasetAdapter.PANDAS
     ) -> None:
+        self.name = name
         self.start = start
         self.end = end
         self.output_file = output_file
@@ -71,13 +74,16 @@ class DataLoader:
     def search_download_url(self) -> List[str]:
         """다운로드 URL 목록 조회"""
         response = requests.get(self.SEARCH_URL).json()
-        partitions = response['results']['device']['event']['partitions']
+        partitions = response['results']['device'][self.name]['partitions']
         
         urls = []
         for item in partitions:
-            first = item['display_name'].split()[0]
-            if first.isdigit() and self.start <= int(first) <= self.end:
-                urls.append(item["file"])
+            if self.start and self.end:
+                first = item['display_name'].split()[0]
+                if first.isdigit() and self.start <= int(first) <= self.end:
+                    urls.append(item["file"])
+            else:
+                urls.append(item['file'])
         return urls
     
     def _collect_schema_worker(self, url: str) -> Tuple[str, set, int]:
@@ -268,8 +274,9 @@ class DataLoader:
 # ============ 사용 예시 ============
 if __name__ == '__main__':
     loader = DataLoader(
-        start=2020,
-        end=2025,
+        name='event',
+        start=2024,
+        end=2024,
         output_file='output.parquet',
         max_workers=4
     )

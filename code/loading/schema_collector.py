@@ -1,7 +1,7 @@
 from typing import Set, Tuple
 
-from .zip_streamer import ZipStreamer
-from .flattener import Flattener
+from code.loading.zip_streamer import ZipStreamer
+from code.loading.flattener import Flattener
 
 class SchemaCollector:
     """URL에서 스키마 수집"""
@@ -10,13 +10,14 @@ class SchemaCollector:
         self.streamer = None
         self.flattener = Flattener()
     
-    def collect_from_url(self, url: str) -> Tuple[str, Set[str], int]:
-        """단일 URL에서 스키마 수집"""
+    def collect_from_url(self, url: str) -> Tuple[Set[str], int]:
+        """단일 URL에서 스키마 수집 (모든 레코드 순회)"""
         try:
             self.streamer = ZipStreamer(url)
             file_columns = set()
             record_count = 0
             
+            # 모든 레코드를 순회하여 전체 스키마 수집
             for record in self.streamer.stream_records():
                 columns = self.flattener.extract_columns(record)
                 file_columns.update(columns)
