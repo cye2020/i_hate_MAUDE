@@ -4,7 +4,6 @@
 """
 
 import re
-from country_named_entity_recognition import find_countries
 import polars as pl
 import shutil
 from typing import Optional, Dict, List, Tuple
@@ -17,7 +16,7 @@ from src.utils import process_lazyframe_in_chunks, apply_mapping_to_columns
 class TextPreprocessor:
     """범용 텍스트 전처리 클래스 (Stateless)"""
     
-    def __init__(self, name: str = "default", remove_countries: bool = False):
+    def __init__(self, name: str = "default"):
         """
         Args:
             name: 전처리기 이름
@@ -25,7 +24,6 @@ class TextPreprocessor:
         self.name = name
         self._patterns = {'delete': [], 'remove': []}
         self._compiled = False
-        self.remove_countries = remove_countries
     
     def add_pattern(self, pattern: str, action: str, description: str = ""):
         """
@@ -106,51 +104,8 @@ class TextPreprocessor:
         for p in self._patterns['delete']:
             if p['regex'].match(text):
                 return None
-            
-        # 국가명 제거 (NER 기반, 옵션)
-        if self.remove_countries:
-            text = self._remove_country_names(text)
-            if not text:
-                return None
         
         return text if text else None
-
-    def _remove_country_names(self, text: str) -> str:
-        """
-        NER을 사용해 텍스트에서 국가명 제거
-        
-        Args:
-            text: 입력 텍스트
-            
-        Returns:
-            국가명이 제거된 텍스트
-            
-        Example:
-            >>> self._remove_country_names('ALLERGAN (COSTA RICA)')
-            'ALLERGAN'
-        """
-        if not text:
-            return text
-        
-        try:
-            # 국가명 찾기
-            countries_found = find_countries(text)
-            
-            if not countries_found:
-                return text
-            
-            match_country = countries_found[0][1][0]
-            regex = re.compile(match_country, re.IGNORECASE)
-            text = regex.sub('', text).strip()
-            if not text:
-                return None
-            
-            return text
-            
-        except Exception as e:
-            # NER 실패 시 원본 텍스트 반환
-            print(f"Warning: Failed to remove country names from '{text}': {e}")
-            return text
     
     def create_mapping_dict(self, unique_values: pl.Series) -> Dict[str, Optional[str]]:
         """
@@ -298,7 +253,6 @@ class PreprocessorPresets:
         # 회사명 특화 REMOVE 패턴 - 법인 형태 제거
         company_removes = [
             (r'\b(INC\.?|INCORPORATED)\b', 'REMOVE', 'INC'),
-            (r'\b(OPERATIONS)\b', 'REMOVE', 'OPERATIONS'),
             (r'\b(CO\.?|COMPANY)\b', 'REMOVE', 'CO'),
             (r'\b(CORP\.?|CORPORATION)\b', 'REMOVE', 'CORP'),
             (r'\b(LTD\.?|LIMITED)\b', 'REMOVE', 'LTD'),
@@ -362,7 +316,7 @@ def create_udi_preprocessor() -> TextPreprocessor:
 
 def create_company_preprocessor() -> TextPreprocessor:
     """회사명 전처리기 생성"""
-    return TextPreprocessor("CompanyName", remove_countries=True).add_patterns(
+    return TextPreprocessor("CompanyName").add_patterns(
         PreprocessorPresets.company_name_patterns()
     )
 

@@ -758,7 +758,7 @@ class UDIProcessor:
                         suffix="_mapping"
                     )
                     .with_columns([
-                        pl.coalesce(["mapped_primary_udi", "udi_combined"]).alias("device_signature"),
+                        pl.coalesce(["mapped_primary_udi", "udi_combined"]).alias("device_version_id"),
                         pl.coalesce(["mapped_manufacturer", "manufacturer"]).alias("manufacturer_final"),
                         pl.coalesce(["mapped_brand", "brand"]).alias("brand_final"),
                         pl.coalesce(["mapped_model_number", "model_number"]).alias("model_number_final"),
@@ -767,7 +767,7 @@ class UDIProcessor:
                     ])
                     .select([
                         *original_cols,  # 원본 컬럼 유지
-                        "device_signature",
+                        "device_version_id",
                         "manufacturer_final",
                         "brand_final",
                         "model_number_final",
@@ -789,7 +789,7 @@ class UDIProcessor:
                         suffix="_mapping"
                     )
                     .with_columns([
-                        pl.coalesce(["mapped_primary_udi"]).alias("device_signature"),
+                        pl.coalesce(["mapped_primary_udi"]).alias("device_version_id"),
                         pl.coalesce(["mapped_manufacturer", "manufacturer"]).alias("manufacturer_final"),
                         pl.coalesce(["mapped_brand", "brand"]).alias("brand_final"),
                         pl.coalesce(["mapped_model_number", "model_number"]).alias("model_number_final"),
@@ -798,7 +798,7 @@ class UDIProcessor:
                     ])
                     .select([
                         *original_cols,  # ✅ 같은 원본 컬럼
-                        "device_signature",
+                        "device_version_id",
                         "manufacturer_final",
                         "brand_final",
                         "model_number_final",
@@ -843,7 +843,7 @@ class UDIProcessor:
                     pl.col("match_source").is_in([
                         "no_match", 
                         "not_in_mapping", 
-                        "udi_no_match"
+                        # "udi_no_match"
                     ])
                 )
                 .then(
@@ -853,6 +853,7 @@ class UDIProcessor:
                         pl.col("mfr_std"), 
                         pl.lit("_"), 
                         pl.coalesce(["brand_final", pl.lit("UNKNOWN")])
+                        .map_elements(uuid5_from_str)
                     ]))
                     .otherwise(pl.concat_str([
                         pl.lit("UNK_"), 
@@ -861,10 +862,11 @@ class UDIProcessor:
                         pl.coalesce(["brand_final", pl.lit("UNKNOWN")]), 
                         pl.lit("_"), 
                         pl.coalesce(["catalog_number_final", pl.lit("NA")])
+                        .map_elements(uuid5_from_str)
                     ]))
                 )
-                .otherwise(pl.col("device_signature"))
-                .alias("device_signature"),
+                .otherwise(pl.col("device_version_id"))
+                .alias("device_version_id"),
                 
                 # 신뢰도 매핑
                 pl.coalesce([
@@ -873,10 +875,6 @@ class UDIProcessor:
                 ]).alias("udi_confidence"),
                 
                 pl.col("match_source").alias("final_source")
-            ]).with_columns([
-                pl.col("device_signature")
-                .map_elements(uuid5_from_str)
-                .alias("device_version_id")
             ])
             
             return chunk_lf
