@@ -2,69 +2,231 @@
 # 데이터 클린징 설정
 # ============================================
 
-# NA/Unknown 패턴
-na_patterns:
-  patterns:
-    - "^None$"
-    - "^UNK"
-    - "^UNKNOWN$"
-    - "NOT APPLICABLE"
-    - "NOT REPORTED"
-    - "NOT AVAILABLE"
-    - "^N/A$"
-    - "^NA$"
-    - "^NI$"
-    - "^NULL$"
-    - "^$"
-    - "\\s+$"
-    - "^-+$"
-    - "^\\.$"
-  
-  case_sensitive: false
-  apply_to_all_text_columns: true
+# 실행 옵션
+execution:
+  chunk_size: 1000000
+  keep_temp: false
+  parallel: false
 
-# 텍스트 정규화
-text_normalization:
-  trim_whitespace: true
-  collapse_spaces: true
-  remove_non_printable: true
-  normalize_quotes: true
+# ============================================
+# 패턴 정의
+# ============================================
+
+patterns:
+  # 기본 패턴 (모든 전처리의 베이스)
+  generic:
+    delete:  # NULL로 변환
+      - pattern: '.*\bUNKNOWN\b.*'
+        description: 'UNKNOWN'
+      - pattern: '.*\bUNKOWN\b.*'
+        description: 'UNKOWN (오타)'
+      - pattern: '.*\bUNK\b.*'
+        description: 'UNK'
+      - pattern: '.*\bUKN\b.*'
+        description: 'UKN (오타)'
+      - pattern: '.*\bNULL\b.*'
+        description: 'NULL'
+      - pattern: '.*\bNONE\b.*'
+        description: 'NONE'
+      - pattern: '.*\bNIL\b.*'
+        description: 'NIL'
+      - pattern: '.*\bN/?A\b.*'
+        description: 'N/A'
+      - pattern: '.*\bN\.A\.?\b.*'
+        description: 'N.A'
+      - pattern: '.*\bNI\b.*'
+        description: 'NI'
+      - pattern: '.*\bNA\b.*'
+        description: 'NA'
+      - pattern: '.*\bNOT\s+AVAILABLE\b.*'
+        description: 'NOT AVAILABLE'
+      - pattern: '.*\bUNAVAILABLE\b.*'
+        description: 'UNAVAILABLE'
+      - pattern: '.*MISSING.*'
+        description: 'MISSING'
+      - pattern: '^NO[\s_]?DATA$'
+        description: 'NO DATA'
+      - pattern: '^EMPTY$'
+        description: 'EMPTY'
+      - pattern: '.*\bNASK\b.*'
+        description: 'NASK'
+      - pattern: '.*\bASKU\b.*'
+        description: 'ASKU'
+      - pattern: '.*\bTRC\b.*'
+        description: 'TRC'
+      - pattern: '.*\bQS\b.*'
+        description: 'QS'
+      - pattern: '.*\bMSK\b.*'
+        description: 'MSK'
+      - pattern: '.*\bNAV\b.*'
+        description: 'NAV'
+      - pattern: '.*\bINV\b.*'
+        description: 'INV'
+      - pattern: '.*\bOTH\b.*'
+        description: 'OTH'
+      - pattern: '.*\bPINF\b.*'
+        description: 'PINF'
+      - pattern: '.*\bNINF\b.*'
+        description: 'NINF'
+      - pattern: '.*\bUNC\b.*'
+        description: 'UNC'
+      - pattern: '.*\bDER\b.*'
+        description: 'DER'
+      - pattern: '^0+$'
+        description: '모두 0'
+      - pattern: '^\s*$'
+        description: '빈 문자열'
+    
+    remove:  # 문자열에서 제거
+      - pattern: '^\s+'
+        description: '시작 공백'
+      - pattern: '\s+$'
+        description: '끝 공백'
+
+  # UDI 특화 패턴
+  udi:
+    delete:
+      - pattern: '^.{2,3}$'
+        description: '2-3자'
+      - pattern: '^.{31,}$'
+        description: '31자 이상'
+      - pattern: '^N$'
+        description: '단일 문자 N'
+      - pattern: '^X+$'
+        description: 'X 반복'
+      - pattern: '.*\$\$.*'
+        description: '$$'
+      - pattern: '.*[@#%^&*]{2,}.*'
+        description: '연속 특수문자'
+    
+    remove:
+      - pattern: '\(\d{2}\)'
+        description: 'GS1 AI'
+      - pattern: '^\d*\+'
+        description: 'HIBCC 접두어'
+      - pattern: '\s+'
+        description: '공백'
+      - pattern: '[^a-zA-Z0-9]'
+        description: '영숫자 외 모든 문자'
+
+  # 회사명 특화 패턴
+  company_name:
+    delete: []  # Generic만 사용
+    
+    remove:
+      - pattern: '\b(INC\.?|INCORPORATED)\b'
+        description: 'INC'
+      - pattern: '\b(OPERATIONS)\b'
+        description: 'OPERATIONS'
+      - pattern: '\b(CO\.?|COMPANY)\b'
+        description: 'CO'
+      - pattern: '\b(CORP\.?|CORPORATION)\b'
+        description: 'CORP'
+      - pattern: '\b(LTD\.?|LIMITED)\b'
+        description: 'LTD'
+      - pattern: '\b(LLC\.?)\b'
+        description: 'LLC'
+      - pattern: '\b(L\.L\.C\.?)\b'
+        description: 'L.L.C'
+      - pattern: '\b(PLC\.?)\b'
+        description: 'PLC'
+      - pattern: '\b(S\.A\.?)\b'
+        description: 'S.A'
+      - pattern: '\b(GMBH\.?)\b'
+        description: 'GMBH'
+      - pattern: '\b(AG\.?)\b'
+        description: 'AG'
+      - pattern: '\b(PTY\.?)\b'
+        description: 'PTY'
+      - pattern: '\b(PVT\.?)\b'
+        description: 'PVT'
+      - pattern: '\b(THE)\b'
+        description: 'THE'
+      - pattern: '[^a-zA-Z0-9\s&]'
+        description: '허용된 문자 외 제거'
+
+  # 일반 텍스트 패턴
+  generic_text:
+    delete:
+      - pattern: '^.{,5}$'
+        description: '5자 이하'
+    
+    remove:
+      - pattern: '[,;]+'
+        description: '구분자'
+
+# ============================================
+# 컬럼별 전처리 전략
+# ============================================
+
+# 컬럼 타입별 전처리기 매핑
+column_strategies:
+  # UDI 관련 컬럼
+  udi_columns:
+    - "device_0_udi_di"
+    - "device_0_udi_public"
+    - "udi_di"
+    - "udi_public"
+    - "extracted_di"
+    - "udi_combined"
   
-  # 대소문자 변환 (특정 컬럼만)
-  uppercase_columns:
+  # 제조사명 컬럼
+  company_columns:
     - "manufacturer_d_name"
-    - "report_source_code"
+    - "device_0_manufacturer_d_name"
+    - "manufacturer_name"
+    - "company_name"
+  
+  # 일반 텍스트 컬럼
+  text_columns:
+    - "device_0_brand_name"
+    - "device_0_generic_name"
+    - "device_0_model_number"
+    - "device_0_catalog_number"
 
-# UDI 추출
+# 전처리 타입별 옵션
+preprocessing_options:
+  udi:
+    patterns: ["generic", "udi"]  # Generic + UDI 패턴
+    uppercase: true
+    remove_countries: false
+    
+  company_name:
+    patterns: ["generic", "company_name"]
+    uppercase: true
+    remove_countries: true  # 국가명 제거 활성화
+    
+  generic_text:
+    patterns: ["generic", "generic_text"]
+    uppercase: true
+    remove_countries: false
+
+# UDI 추출 설정 (기존과 동일)
 udi_extraction:
   extract_di_from_public: true
-  
   di_patterns:
-    - "\\(01\\)(\\d{14})"          # GS1
-    - "\\+\\$\\$\\+(.*?)\\+\\$"    # HIBCC
-    - "=([0-9A-Z]{14,})"           # ICCBBA
+    - "\\(01\\)(\\d{14})"
+    - "\\+\\$\\$\\+(.*?)\\+\\$"
+    - "=([0-9A-Z]{14,})"
 
-# 날짜 통합
+# 날짜 통합 설정 (기존과 동일)
 date_coalescing:
-  # 보고 날짜 우선순위
   report_date_priority:
     - "date_of_event"
     - "date_received"
     - "date_report"
     - "device_0_date_received"
   
-  # UDI 발행 날짜
   udi_publish_date_priority:
     - "publish_date"
     - "date_record_created"
   
-  # 날짜 검증
   validation:
     min_year: 1990
     max_year: 2030
     invalid_action: "set_null"
 
-# MDR 텍스트 처리
+# MDR 텍스트 처리 (기존과 동일)
 mdr_text_cleaning:
   columns:
     - "mdr_text_0_text"
@@ -75,7 +237,6 @@ mdr_text_cleaning:
     - "remove_extra_whitespace"
     - "normalize_line_breaks"
   
-  # 텍스트 특징 추출
   extract_features:
     - "text_length"
     - "word_count"
