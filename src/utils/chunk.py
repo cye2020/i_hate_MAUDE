@@ -48,30 +48,56 @@ def process_lazyframe_in_chunks(
     temp_dir = output_path.parent / temp_dir_name
     temp_dir.mkdir(parents=True, exist_ok=True)
     
+    unique_key = set()
     try:
         # 3. Chunk 단위 처리
+        num_chunks = (total_rows + chunk_size - 1) // chunk_size
+        width = len(str(num_chunks * chunk_size))
         for offset in trange(0, total_rows, chunk_size, desc=desc):
             chunk_lf = lf.slice(offset, chunk_size)
+            
+            cnt_rows = chunk_lf.select(pl.len()).head().collect().item()
+            cnt_key = chunk_lf.select(pl.col('mdr_report_key').unique()).collect().to_series().to_list()
+            # print('='*30 + f'Chunk_{offset} Log', '='*30)
+            # print(f'Chunk Row Count: {cnt_rows}')
+            # print(f'Chunk Key Count: {cnt_key}')
+            unique_key.update(cnt_key)
             
             # 변환 함수 적용
             chunk_transformed = transform_func(chunk_lf)
             
-            # Chunk 저장
-            chunk_path = temp_dir / f'chunk_{offset}.parquet'
-            chunk_transformed.sink_parquet(
+            chunk_df = chunk_transformed.collect()  # ← 여기서 확정
+            
+            # 검증용 카운트
+            cnt_key = chunk_df.select(pl.col('mdr_report_key').unique()).to_series().to_list()
+            unique_key.update(cnt_key)
+            
+            # DataFrame을 바로 저장 (sink 대신 write)
+            chunk_path = temp_dir / f'chunk_{offset:0{width}d}.parquet'
+            chunk_df.write_parquet(
                 chunk_path,
                 compression='zstd',
                 compression_level=3
             )
-        
+            
+        print(f'Total Key Count: {len(unique_key)}')
+        chunk_files = sorted(temp_dir.glob('chunk_*.parquet'))
+        print(f'Chunk File Count: {len(chunk_files)}')
         # 4. 병합
         print("Merging chunks...")
-        pl.scan_parquet(str(temp_dir / 'chunk_*.parquet')).sink_parquet(
+        merge_lf = pl.scan_parquet(chunk_files)
+        cnt_key = merge_lf.select(pl.col('mdr_report_key').n_unique()).collect().item()
+        print(f'Merge Key Count: {cnt_key}')
+        
+        merge_lf.sink_parquet(
             output_path,
             compression='zstd',
-            compression_level=3
+            compression_level=3,
+            maintain_order=True
         )
-        
+        merge_lf = pl.scan_parquet(output_path)
+        cnt_key = merge_lf.select(pl.col('mdr_report_key').n_unique()).collect().item()
+        print(f'Merge Load Key Count: {cnt_key}')
         print(f"✓ Saved to {output_path}")
     
     finally:
