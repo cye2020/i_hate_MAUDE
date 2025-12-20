@@ -97,7 +97,7 @@ class StatisticalTest(ABC):
     def interpret(self):
         pass
 
-    def check_homogeneity(self, data: List[pd.Series]):
+    def check_homogeneity(self, data: List[pd.Series], alpha: Optional[float] = None):
         """
         등분산성 검정 수행 (Levene's Test)
 
@@ -123,7 +123,7 @@ class StatisticalTest(ABC):
             - True : 등분산성 만족
             - False : 등분산성 위반
         """
-
+        alpha = alpha if alpha else self.alpha
         print("\n[등분산성 검정 - Levene's Test]")
         print("-" * 50)
 
@@ -142,32 +142,35 @@ class StatisticalTest(ABC):
 
         return stat, p_value, is_equal_var
     
-    def check_group_normality(self, data: List[ArrayLike], group_labels: List[str], mode: str):
+    def check_group_normality(self, data: List[ArrayLike], group_labels: List[str], mode: str, alpha: Optional[float] = None):
+        alpha = alpha if alpha else self.alpha
         results = []
         for label, group_data in zip(group_labels, data):
             stat, p_value, is_normal = self.check_normality(group_data, group_labels, mode)
             results.append({
                 '그룹': label,
-                'W-통계량': round(stat, 4),
-                'p-value': round(p_value, 4),
+                'W-통계량': round(stat, 4) if stat else None,
+                'p-value': round(p_value, 4) if p_value else None,
                 '판정': is_normal
             })
         result_df = pd.DataFrame(results)
         display(result_df)
         
-        all_normal = all(r['is_normal'] for r in results)
+        all_normal = all(r['판정'] for r in results)
         return all_normal
 
-    def check_normality(self, data: ArrayLike, label: str, mode: str):
+    def check_normality(self, data: ArrayLike, label: str, mode: str, alpha: Optional[float] = None):
+        alpha = alpha if alpha else self.alpha
         if mode == 'soft':
-            return self.check_normality_soft(data, label)
+            return self.check_normality_soft(data, label, alpha)
         elif mode == 'hard':
-            return self.check_normality_hard(data, label)
+            return self.check_normality_hard(data, label, alpha)
         else:
             msg = f'Invalid mode: "{mode}". Expected one of ["soft", "hard"].'
             raise ValueError(msg)
 
-    def check_normality_soft(self, data: ArrayLike, label: str = "데이터"):
+    def check_normality_soft(self, data: ArrayLike, label: str = "데이터", alpha: Optional[float] = None):
+        alpha = alpha if alpha else self.alpha
         """
         데이터의 정규성을 검정하는 함수: t-test용
 
@@ -216,6 +219,7 @@ class StatisticalTest(ABC):
             reason = f"Shapiro p={'>' if is_normal else '≤'}{self.alpha}"
         elif n < 100:
             if abs(skew) < 1 and abs(kurt) < 2:
+                stat, p_value = None, None
                 is_normal = True
                 reason = "|왜도|<1, |첨도|<2"
             else:
@@ -231,7 +235,9 @@ class StatisticalTest(ABC):
         print(f"결과: {'✅ 정규분포 가정 충족' if is_normal else '❌ 정규분포 가정 위반'} ({reason})")
         return stat, p_value, is_normal
 
-    def check_normality_hard(self, data: ArrayLike, label: str = "데이터"):
+    def check_normality_hard(self, data: ArrayLike, label: str = "데이터", alpha: float = None):
+        alpha = alpha if alpha else self.alpha
+        
         # NaN 체크
         if pd.isna(data).any():
             print(f"⚠️ 경고: {label}에 NaN 값이 {pd.isna(data).sum()}개 포함됨")
@@ -239,11 +245,11 @@ class StatisticalTest(ABC):
             print(f"   → NaN 제거 후 n={len(data)}")
 
         n = len(data)
-
         print(f"\n[{label} 정규성 검정] n={n}")
         print("-"*40)
         
         stat, p_value = shapiro(data)
+        is_normal = p_value > alpha
         print(f"Shapiro-Wilk p-value: {p_value:.4f}")
         reason = f"Shapiro p={'>' if is_normal else '≤'}{self.alpha}"
         is_normal = True if p_value > self.alpha else False
@@ -645,6 +651,59 @@ class OneWayAnova(StatisticalTest):
     def __init__(self):
         super().__init__()
         self.test_name = '일원배치 ANOVA'
+        
+        self.configs = {
+            'f_test': {
+                'test_name': 'F-test',
+                'stat_func': self._run_f_test,
+                'effect_func': self.calculate_eta_squared,
+                'effect_name': 'η²',
+                'post_hoc_func': self.perform_tukey_hsd,
+                'is_rank': False
+            },
+            'welch': {
+                'test_name': "Welch's ANOVA",
+                'stat_func': self._run_welch_test,
+                'effect_func': None,  # 효과 크기 계산 안 함
+                'effect_name': None,
+                'post_hoc_func': self.perform_gameshowell,
+                'is_rank': False
+            },
+            'kruskal': {
+                'test_name': 'Kruskal-Wallis',
+                'stat_func': self._run_kruskal_test,
+                'effect_func': self.calculate_epsilon_squared,
+                'effect_name': 'ε²',
+                'post_hoc_func': self.perform_dunn_test,
+                'is_rank': True
+            }
+        }
+
+    def _select_config(
+        self, is_normal, is_equal_var,
+        data, iv_col, dv_col, 
+        data_groups, group_labels, 
+        k, N
+    ):
+        """조건에 따라 적절한 검정 설정 선택"""
+        if not is_normal:
+            base_config = self.configs['kruskal']
+            test_args = [data_groups, k, N]
+            post_hoc_args = [data, iv_col, dv_col]
+        elif is_equal_var:
+            base_config = self.configs['f_test']
+            test_args = [data_groups, k, N]
+            post_hoc_args = [data_groups, group_labels]
+        else:
+            base_config = self.configs['welch']
+            test_args = [data, iv_col, dv_col]
+            post_hoc_args = [data, iv_col, dv_col]
+
+        return {
+            **base_config,  # 기존 설정 복사
+            'test_args': test_args,
+            'post_hoc_args': post_hoc_args
+        }
     
     def execute(self,
         data: pd.DataFrame, 
@@ -665,114 +724,32 @@ class OneWayAnova(StatisticalTest):
         print(f"유의수준: α = {alpha}")
         
         group_labels = data[iv_col].unique().tolist()
-        data_groups = [data[data[iv_col] == label] for label in group_labels]
+        data_groups = [data[data[iv_col] == label][dv_col] for label in group_labels]
         
-        is_normal = self.check_normality(data_groups, group_labels, mode=mode)
-        is_equal_var = self.check_homogeneity(data_groups, group_labels)
-        
-        if is_normal:
-            print("\n✅ 모든 그룹이 정규성 가정을 만족합니다.")
-        else:
-            print("\n⚠️ 일부 그룹이 정규성 가정을 만족하지 않습니다.")
-            print("   → 비모수 검정(Kruskal-Wallis) 고려")
-    
         # 전체 표본 크기 및 그룹 수
         k = len(data_groups)
         N = sum(len(group) for group in data_groups)
         
-        if is_normal:
-            if is_equal_var:
-                test_name = "f-test"
-                test_func = self._run_f_test
-                test_args = [data_groups, k, N]
-                effect_func = self.calculate_eta_squared
-                post_hoc_func = self.perform_tukey_hsd
-            else:
-                test_name = "Welch's ANOVA test"
-                test_func = self._run_welch_test
-                test_args = [data, iv_col, dv_col]
-                effect_func = None
-                post_hoc_func = self.perform_tukey_hsd
-        else:
-            test_name = 'Kruskal-Wallis test'
-            test_func = self._run_kruskal_test
-            test_args = [data_groups, k, N]
-
-        test_stat, p_value, df_info = test_func(*test_args)
-        effect_size, interpretation = self._calculate_effect_size(effect_func, test_stat, *df_info)
+        # 정규성, 등분산성
+        is_normal = self.check_group_normality(data_groups, group_labels, mode=mode, alpha=alpha)
+        is_equal_var = self.check_homogeneity(data_groups, alpha=alpha)
         
+        # 적절한 검정 선택
+        config = self._select_config(is_normal, is_equal_var, data, iv_col, dv_col, data_groups, group_labels, k, N)
+
+        test_stat, p_value, df_info = config['stat_func'](*config['test_args'])
+        effect_size, effect_interpretation = self._calculate_effect_size(
+            config['effect_func'], 
+            test_stat, *df_info, 
+            iv_col=iv_col, dv_col=dv_col,
+            effect_name=config['effect_name'], is_rank=config['is_rank']
+        )
+        conclusion, post_hoc = self._print_conclusion_and_posthoc(p_value, iv_col, dv_col, config['post_hoc_func'], *config['post_hoc_args'], alpha=alpha)
         
-        if is_normal:
-            test_name = "f-test" if is_equal_var else "Welch's ANOVA "
-            
-            if is_equal_var:   
-                
-                # 효과 크기 계산
-                effect_size, effect_interpretation = self._calculate_effect_size(
-                    self.calculate_eta_squared, f_stat, df1, df2,
-                    iv_col=iv_col, dv_col=dv_col, effect_name="η²"
-                )
-                
-                conclusion, metadata = self._print_conclusion_and_posthoc(
-                    p_value, alpha, iv_col, dv_col,
-                    self.perform_tukey_hsd, data_groups, group_labels, alpha
-                )
-
-            else:
-                # ==========================================================================
-                # Welch's ANOVA (정규성 만족, 등분산성 위반)
-                # ==========================================================================
-                print("\n⚠️ 등분산성 가정이 위반되었으므로 Welch's ANOVA를 수행합니다.")
-                print("\n[Welch's ANOVA (이분산 ANOVA)]")
-                print("-"*50)
-                welch_result = pg.welch_anova(dv=dv_col, between=iv_col, data=data)
-                f_stat = welch_result['F'].values[0]
-                df1 = welch_result['ddof1'].values[0]
-                df2 = welch_result['ddof2'].values[0]
-                p_value = welch_result['p-unc'].values[0]
-            
-                print(f"{test_name} 결과:")
-                print(f"자유도: F({df1}, {df2})")
-                print(f"f = {f_stat:.4f}, p = {p_value:.4f}")
-                
-                print("\n※ Welch's ANOVA는 등분산성 가정을 요구하지 않으므로")
-                print("   전통적인 효과 크기(η², ω²)를 직접 계산하기 어렵습니다.")
-                print("   F 통계량과 p-value로 효과의 유의성을 판단하세요.")
-                effect_size = None
-                effect_interpretation = None
-                
-                # 결론
-                conclusion, metadata = self._print_conclusion_and_posthoc(
-                    p_value, alpha, iv_col, dv_col,
-                    self.perform_gameshowell, data_groups, group_labels, alpha
-                )
-            test_stat = f_stat
-        else:
-            print("⚠️ 정규성 가정이 위반되었으므로 비모수 검정을 수행합니다.")
-            print("\n[Kruskal-Wallis 검정 (비모수 검정)]")
-            print("\- Kruskal-Wallis 검정은 또한 등분산성 가정이 필요 없음")
-            print("-"*50)
-            df = k - 1
-            h_stat, p_value = stats.kruskal(*data)# 비모수 효과 크기 계산
-            print(f"H-통계량: {h_stat:.4f}")
-            print(f"자유도: {df}")
-            print(f"p-value: {p_value:.6f}")
-            
-            effect_size, effect_interpretation = self._print_effect_size(
-                self.calculate_epsilon_squared, h_stat, k, N,
-                iv_col=iv_col, dv_col=dv_col, effect_name="ε²", is_rank=True
-            )
-            
-            # 결론
-            conclusion, metadata = self._print_conclusion_and_posthoc(
-                p_value, alpha, iv_col, dv_col,
-                self.perform_dunn_test, data, iv_col, dv_col
-            )
-
-            test_stat = h_stat
+        metadata.update(post_hoc)
         
         return TestResult(
-            test_name=self.test_name,
+            test_name=self.test_name + ' - ' + config['test_name'],
             statistic=test_stat,
             p_value=p_value,
             effect_size=effect_size,
@@ -780,6 +757,9 @@ class OneWayAnova(StatisticalTest):
             conclusion=conclusion,
             metadata=metadata
         )
+    
+    def interpret(self):
+        return super().interpret()
         
     # 각 검정별 실행 함수
     def _run_f_test(self, data_groups, k, N):
@@ -826,8 +806,8 @@ class OneWayAnova(StatisticalTest):
         
         return effect_size, interpretation
 
-    def _print_conclusion_and_posthoc(self, p_value, alpha, iv_col, dv_col, 
-                                    post_hoc_func, *post_hoc_args):
+    def _print_conclusion_and_posthoc(self, p_value, iv_col, dv_col, 
+                                    post_hoc_func, *post_hoc_args, alpha):
         """결론 출력 및 사후검정 수행 (공통 로직)"""
         print("\n[검정 결론]")
         
@@ -1164,10 +1144,11 @@ class OneWayAnova(StatisticalTest):
 
         return result, post_hoc_text
     
-    def perform_dunn_test(df: pd.DataFrame, iv_col: str, dv_col: str):
+    def perform_dunn_test(self, df: pd.DataFrame, iv_col: str, dv_col: str, alpha: float = None):
         """
         Dunn's 사후검정 수행
         """
+        alpha = alpha if alpha else self.alpha
         post_hoc = []
 
         print("\n[Dunn's Test 사후검정]")
@@ -1218,7 +1199,7 @@ class OneWayAnova(StatisticalTest):
         for i in range(len(groups)):
             for j in range(i + 1, len(groups)):
                 p_val = dunn_result.iloc[i, j]
-                if p_val < 0.05:
+                if p_val < alpha:
                     post_hoc.append(
                         f"  • {groups[i]} ≠ {groups[j]} "
                         f"(p={p_val:.4f}, 유의한 차이)"
@@ -1267,3 +1248,95 @@ class OneWayAnova(StatisticalTest):
 
         return dunn_result, post_hoc_text
 
+
+if __name__=='__main__':
+    import pandas as pd
+    import numpy as np
+
+    # 테스트 데이터 생성
+    np.random.seed(42)
+
+    # 그룹 A, B, C의 데이터 생성 (정규분포, 등분산)
+    group_a = np.random.normal(loc=50, scale=10, size=30)
+    group_b = np.random.normal(loc=55, scale=10, size=30)
+    group_c = np.random.normal(loc=60, scale=10, size=30)
+
+    # 데이터프레임 생성
+    test_data = pd.DataFrame({
+        'group': ['A']*30 + ['B']*30 + ['C']*30,
+        'score': np.concatenate([group_a, group_b, group_c])
+    })
+
+    # 테스트 실행
+    print("=" * 60)
+    print("테스트 1: 정규분포 + 등분산 데이터 (F-test 예상)")
+    print("=" * 60)
+
+    anova = OneWayAnova()
+    result1 = anova.execute(
+        data=test_data,
+        iv_col='group',
+        dv_col='score',
+        alpha=0.05
+    )
+
+    print("\n반환된 결과:")
+    print(f"- 검정명: {result1.test_name}")
+    print(f"- 통계량: {result1.statistic:.4f}")
+    print(f"- p-value: {result1.p_value:.6f}")
+    print(f"- 효과크기: {result1.effect_size}")
+    print(f"- 결론: {result1.conclusion}")
+
+    # 테스트 2: 이분산 데이터 (Welch's ANOVA 예상)
+    print("\n\n" + "=" * 60)
+    print("테스트 2: 정규분포 + 이분산 데이터 (Welch's ANOVA 예상)")
+    print("=" * 60)
+
+    group_a2 = np.random.normal(loc=50, scale=5, size=30)
+    group_b2 = np.random.normal(loc=55, scale=15, size=30)
+    group_c2 = np.random.normal(loc=60, scale=25, size=30)
+
+    test_data2 = pd.DataFrame({
+        'group': ['A']*30 + ['B']*30 + ['C']*30,
+        'score': np.concatenate([group_a2, group_b2, group_c2])
+    })
+
+    result2 = anova.execute(
+        data=test_data2,
+        iv_col='group',
+        dv_col='score',
+        alpha=0.05
+    )
+
+    print("\n반환된 결과:")
+    print(f"- 검정명: {result2.test_name}")
+    print(f"- 통계량: {result2.statistic:.4f}")
+    print(f"- p-value: {result2.p_value:.6f}")
+
+    # 테스트 3: 비정규 데이터 (Kruskal-Wallis 예상)
+    print("\n\n" + "=" * 60)
+    print("테스트 3: 비정규분포 데이터 (Kruskal-Wallis 예상)")
+    print("=" * 60)
+
+    group_a3 = np.random.exponential(scale=2, size=30)
+    group_b3 = np.random.exponential(scale=3, size=30)
+    group_c3 = np.random.exponential(scale=4, size=30)
+
+    test_data3 = pd.DataFrame({
+        'group': ['A']*30 + ['B']*30 + ['C']*30,
+        'score': np.concatenate([group_a3, group_b3, group_c3])
+    })
+
+    result3 = anova.execute(
+        data=test_data3,
+        iv_col='group',
+        dv_col='score',
+        alpha=0.05,
+        mode='hard'
+    )
+
+    print("\n반환된 결과:")
+    print(f"- 검정명: {result3.test_name}")
+    print(f"- 통계량: {result3.statistic:.4f}")
+    print(f"- p-value: {result3.p_value:.6f}")
+    print(f"- 효과크기: {result3.effect_size}")
