@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 # Enum 정의
 class PatientHarm(str, Enum):
@@ -37,7 +37,7 @@ class IncidentDetails(BaseModel):
     incident_summary: str = Field(max_length=200, description="Concise summary of the incident")
 
 class ManufacturerInspection(BaseModel):
-    defect_confirmed: bool | None = Field(None, description="Whether the defect was confirmed")
+    defect_confirmed: StrictBool = Field(description="Whether the defect was confirmed")
     defect_type: DefectType | None = Field(None, description="Type of defect identified during inspection")
     inspection_actions: str | None = Field(None, max_length=200)
 

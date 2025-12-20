@@ -10,7 +10,8 @@ import json
 import time
 from pathlib import Path
 from typing import List, Union
-from tqdm import tqdm
+from functools import partial
+from tqdm import tqdm, trange
 import shutil
 
 from src.preprocess.prompt import SYSTEM_INSTRUCTION, USER_PROMPT_TEMPLATE, MAUDEExtraction
@@ -133,7 +134,11 @@ class MAUDEExtractor:
         
         # 프롬프트 생성 및 vLLM 추론
         prompts = self._create_prompts(rows)
-        outputs = self.llm.generate(prompts, self.sampling_params, use_tqdm=True)
+        outputs = self.llm.generate(
+            prompts, 
+            self.sampling_params, 
+            use_tqdm=partial(tqdm, mininterval=5.0)
+        )
         
         batch_time = time.time() - batch_start
         
@@ -267,7 +272,7 @@ class MAUDEExtractor:
         try:
             num_chunks = (len(df) - 1) // checkpoint_interval + 1
             
-            for chunk_idx in tqdm(range(num_chunks), desc="Processing chunks"):
+            for chunk_idx in trange((num_chunks), desc="Processing chunks"):
                 start_idx = chunk_idx * checkpoint_interval
                 end_idx = min((chunk_idx + 1) * checkpoint_interval, len(df))
                 chunk_df = df.iloc[start_idx:end_idx]
@@ -353,10 +358,10 @@ if __name__ == "__main__":
     extractor = MAUDEExtractor(
         model_path='Qwen/Qwen3-8B-Instruct',
         tensor_parallel_size=1,                # GPU 1개 사용
-        gpu_memory_utilization=0.85,           # Milvus 고려
-        max_model_len=8192,
-        max_num_batched_tokens=16384,          # Throughput 핵심
-        max_num_seqs=256,                      # 동시 처리 시퀀스
+        gpu_memory_utilization=0.80,      # 0.85 → 0.80 (메모리 더 필요)
+        max_model_len=16384,              # 8192 → 16384
+        max_num_batched_tokens=32768,     # 16384 → 32768 (2배)
+        max_num_seqs=128,                 # 256 → 128 (동시 처리 줄이기)
         max_retries=2,
         enable_prefix_caching=True             # 시스템 프롬프트 캐싱
     )

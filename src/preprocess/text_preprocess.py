@@ -434,6 +434,8 @@ def main():
     elapsed = time.time() - start_time
     print(f"Elapsed time: {elapsed:.2f} seconds")
     
+    if not n_rows:
+        n_rows = len(result_df)
     prompt_path = result_dir / f'prompt_{n_rows}_{datetime.now().date()}.txt'
     result_path = result_dir / f'maude_{n_rows}_{datetime.now().date()}.parquet'
     prompt_path = increment_path(prompt_path, exist_ok=False, sep='_')
