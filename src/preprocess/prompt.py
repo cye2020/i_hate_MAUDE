@@ -34,13 +34,10 @@ class IncidentDetails(BaseModel):
         min_length=0,
         max_length=5
     )
-    incident_summary: str = Field(max_length=200, description="Concise summary of the incident")
 
 class ManufacturerInspection(BaseModel):
     defect_confirmed: StrictBool = Field(description="Whether the defect was confirmed")
     defect_type: DefectType | None = Field(None, description="Type of defect identified during inspection")
-    inspection_actions: str | None = Field(None, max_length=200)
-
 class MAUDEExtraction(BaseModel):
     incident_details: IncidentDetails
     manufacturer_inspection: ManufacturerInspection
