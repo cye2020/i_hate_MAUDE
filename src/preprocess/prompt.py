@@ -53,10 +53,8 @@ Extract 6 structured variables with <5% UNKNOWN classifications through systemat
 # VARIABLES TO EXTRACT
 1. patient_harm (enum)
 2. problem_components (list, max 5)
-3. incident_summary (str, max 200 chars)
-4. defect_confirmed (bool)
-5. defect_type (enum)
-6. inspection_actions (str, max 200 chars)
+3. defect_confirmed (bool)
+4. defect_type (enum)
 
 ---
 
@@ -83,11 +81,7 @@ Prioritize failure-related components.
 - Prioritize components directly related to the failure
 - Use singular form (e.g., "battery" not "batteries")
 
-### 3. Incident Summary
-Concise factual summary (max 200 chars): "[Component] [failed/error type], resulting in [consequence]"
-Example: "RV lead exhibited high impedance and thresholds, requiring lead replacement."
-
-### 4. Defect Type (CRITICAL - 3 step process)
+### 3. Defect Type (CRITICAL - 3 step process)
 **CLASSIFICATION RULES:**
 - Analyze the ENTIRE MDR text to identify the CAUSE of the incident
 - Use product_problem field as supporting evidence to confirm your classification
@@ -171,7 +165,7 @@ REJECT Unknown if:
 - "Cause under investigation" but "stopped working" → Functional Failure
 - Text is completely empty or says "unknown" with zero context → Unknown (rare acceptable case)
 
-### 5. Defect Confirmed
+### 4. Defect Confirmed
 Check in order:
 1. Manufacturer explicitly confirmed defect → true
 2. You classified defect_type (NOT "Unknown" or "Other") → true
@@ -180,24 +174,12 @@ Check in order:
 **Key Rule**
 - If you successfully classified defect_type (Steps 5A-5C), you have enough info → set to true
 
-## 6. Inspection Actions
-Summarize manufacturer's findings/actions (max 200 chars)
-- What tests were conducted?
-- What was discovered?
-- What corrective actions taken?
-
-IF no investigation mentioned:
-- "No inspection reported" (if truly absent)
-- "Pending investigation" (if stated as ongoing)
-- null (if section is entirely empty)
-
-## 7. SELF-VERIFICATION CHECKLIST (Execute Before Output)
+## 5. SELF-VERIFICATION CHECKLIST (Execute Before Output)
 
 ### Phase 1: Accuracy Review
-- [ ] Did I check ALL 12 defect categories before using "Unknown"?
+- [ ] Did I check ALL 12 defect type categories before using "Unknown"?
 - [ ] Did I infer patient_harm from context (not just explicit statements)?
 - [ ] Did I set defect_confirmed=true if I classified defect_type successfully?
-- [ ] Is incident_summary factual and concise (<200 chars)?
 - [ ] Did I extract actual component names (not generic terms)?
 
 ### Phase 2: Constraint Compliance
@@ -213,16 +195,13 @@ IF no investigation mentioned:
 IF any checkbox is unchecked → REVISE before outputting
 
 # TASK
-Following the systematic extraction workflow (Steps 1-7) and self-verification checklist in the system instructions:
+Following the systematic extraction workflow (Steps 1-5) and self-verification checklist in the system instructions:
 
 1. Analyze the MDR text and product problem field
-2. Extract all 6 variables with minimal UNKNOWN/null values
-3. Apply the 3-step defect classification process (5A → 5B → 5C)
+2. Extract all 4 variables with minimal UNKNOWN/null values
+3. Apply the 3-step defect type classification process (5A → 5B → 5C)
 4. Complete self-verification checklist
 5. Return JSON output matching MAUDEExtraction schema
-
-# OUTPUT REQUIREMENTS:
-Return JSON with incident_details and manufacturer_inspection.
 
 Remember:
 - Infer defect type from symptoms (don't default to Unknown)
