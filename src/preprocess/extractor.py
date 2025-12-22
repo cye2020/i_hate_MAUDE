@@ -101,8 +101,9 @@ class MAUDEExtractor:
         prompts = []
         
         for row in rows:
-            text = row['mdr_text']
-            product_problem = row['product_problems']
+            # row.mdr_text 형태로 접근
+            text = row.mdr_text
+            product_problem = row.product_problems
             
             user_content = self.prompt.format_user_prompt(
                 text=text,
@@ -155,7 +156,7 @@ class MAUDEExtractor:
         total_input_tokens = 0
         total_output_tokens = 0
         
-        for _, (row, output) in enumerate(zip(rows, outputs)):
+        for idx, (row, output) in enumerate(zip(rows, outputs)):
             try:
                 response_text = output.outputs[0].text
                 validated_data = self._parse_and_validate(response_text)
@@ -168,7 +169,7 @@ class MAUDEExtractor:
                 
                 result = {
                     **validated_data,
-                    '_row_id': row.name,
+                    '_row_id': row.Index,  # row.name → row.Index
                     '_success': True,
                     '_input_tokens': input_tokens,
                     '_output_tokens': output_tokens,
@@ -178,7 +179,7 @@ class MAUDEExtractor:
                 
             except Exception as e:
                 results.append({
-                    '_row_id': row.name,
+                    '_row_id': row.Index,  # row.name → row.Index
                     '_success': False,
                     '_error': str(e)[:200],
                     '_raw_response': output.outputs[0].text[:200]
@@ -216,7 +217,7 @@ class MAUDEExtractor:
                 print(f"\n  Retry attempt {attempt}: {len(pending_df)} failed samples")
 
             # vLLM 추론 및 파싱
-            rows = [row for _, row in pending_df.iterrows()]
+            rows = list(pending_df.itertuples(index=True))
             results, stats = self._generate_and_parse(rows)
             
             # 통계 출력
