@@ -7,7 +7,7 @@ _base: "../base.yaml"
 
 # 입력 데이터 설정
 input:
-  source_file: "maude_preprocess.parquet"
+  source_file: "maude_preprocess_step1.parquet"
   source_dir: "silver"  # bronze, silver, gold (base.yaml의 paths 사용)
   
   # 샘플링 설정
@@ -56,7 +56,7 @@ preprocessing:
 
 # LLM 모델 설정
 model:
-  name: "nvidia/Qwen3-14B-FP4"
+  name: "nvidia/Qwen3-235B-A22B-NVFP4"
   
   # vLLM 엔진 설정
   vllm:

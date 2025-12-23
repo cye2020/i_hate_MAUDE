@@ -5,18 +5,18 @@ set -euo pipefail
 # 환경 설정
 ############################
 
-ENV_NAME=maude_preprocess
+ENV_NAME=maude
 PYTHON=python3
 
 # conda 환경 생성 (1회만)
-conda create -n $ENV_NAME python=3.10.12 -y
+# conda create -n $ENV_NAME python=3.10.12 -y
 
 # conda 활성화
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate $ENV_NAME
+# source "$(conda info --base)/etc/profile.d/conda.sh"
+# conda activate $ENV_NAME
 
 # 패키지 설치 (1회만)
-pip install -r requirements.txt
+# pip install -r requirements.txt
 
 ############################
 # 데이터 분할
