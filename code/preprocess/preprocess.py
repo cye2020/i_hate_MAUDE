@@ -1,15 +1,13 @@
 import re
 import sys
 import psutil
-from typing import List, Dict, Tuple, Union, Optional, Callable
-from pathlib import Path
+from typing import List, Dict, Tuple, Union
 import polars as pl
-from rapidfuzz import fuzz
 import plotly.graph_objects as go
 from IPython.display import display
 from tqdm import tqdm
 
-from src.utils import is_running_in_notebook
+from code.utils import is_running_in_notebook
 
 if not is_running_in_notebook():
     display = print
@@ -386,6 +384,7 @@ def get_unique(lf: pl.LazyFrame, cols: List[str]) -> set:
     ------
     - unpivot으로 모든 컬럼을 하나의 컬럼으로 합친 후 unique 추출
     - streaming 엔진 사용으로 메모리 효율성 향상
+    - null 값도 set에 포함됨 (None으로 표시)
     - 결과가 메모리에 완전히 로드되므로 고유값이 매우 많으면 주의 필요
     """
     unique_set = set(
@@ -393,7 +392,6 @@ def get_unique(lf: pl.LazyFrame, cols: List[str]) -> set:
         .unpivot(on=cols)  # 모든 컬럼을 'value' 컬럼 하나로 합치기
         .select('value')  # value 컬럼만 선택
         .unique()  # 중복 제거
-        .drop_nulls() # 결측치 제거
         .collect(engine='streaming')  # streaming 엔진으로 실행 (메모리 효율)
         ['value']  # value 컬럼 추출
     )
@@ -936,157 +934,3 @@ def str_to_categorical(lf: pl.LazyFrame, cols: List[str]) -> pl.LazyFrame:
         pl.col(cols).cast(pl.Categorical)
     )
     return categorical_lf
-
-
-# ==== UDI 처리를 위해 ======
-
-def extract_di_from_public(udi_public: str) -> Optional[str]:
-    """UDI-Public에서 DI 추출"""
-    if not udi_public:
-        return None
-    
-    match = re.search(r'\(01\)(\d{14})', str(udi_public))
-    if match:
-        return match.group(1)
-    
-    match = re.search(r'\+([^/\$]+)', str(udi_public))
-    if match:
-        return match.group(1).strip()
-    
-    return None
-
-
-def fuzzy_match_dict(source_list: list, target_list: list, threshold: int = 85) -> dict:
-    """리스트 간 퍼지 매칭"""
-    mapping = {}
-    
-    for src in source_list:
-        if not src:
-            continue
-        
-        best_score = 0
-        best_match = src
-        
-        for tgt in target_list:
-            if not tgt:
-                continue
-            score = fuzz.ratio(str(src).lower(), str(tgt).lower())
-            if score > best_score:
-                best_score = score
-                best_match = tgt
-        
-        mapping[src] = best_match if best_score >= threshold else src
-    
-    return mapping
-
-
-def process_in_chunks(
-    lf: pl.LazyFrame,
-    transform_func: Callable[[pl.LazyFrame], pl.LazyFrame],
-    output_path: Path,
-    chunk_size: int = 1_000_000,
-    desc: str = "Processing"
-) -> None:
-    """
-    LazyFrame을 chunk 단위로 처리하여 저장
-    
-    Args:
-        lf: 입력 LazyFrame
-        transform_func: 변환 함수 (LazyFrame → LazyFrame)
-        output_path: 출력 경로
-        chunk_size: chunk 크기
-        desc: 진행 표시줄 설명
-    """
-    # 전체 행 수 계산
-    total_rows = lf.select(pl.count()).collect().item()
-    n_chunks = (total_rows + chunk_size - 1) // chunk_size
-    
-    temp_dir = output_path.parent / f"temp_{output_path.stem}"
-    temp_dir.mkdir(exist_ok=True)
-    
-    try:
-        # Chunk 단위 처리
-        for i in tqdm(range(n_chunks), desc=desc):
-            chunk_lf = lf.slice(i * chunk_size, chunk_size)
-            transformed_lf = transform_func(chunk_lf)
-            
-            # 임시 파일 저장
-            chunk_path = temp_dir / f"chunk_{i:04d}.parquet"
-            transformed_lf.collect().write_parquet(chunk_path)
-        
-        # 병합
-        print(f"Merging {n_chunks} chunks...")
-        pl.scan_parquet(temp_dir / "*.parquet").sink_parquet(output_path)
-        
-    finally:
-        # 임시 파일 삭제
-        import shutil
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-
-
-def collect_unique_safe(lf: pl.LazyFrame, column: str) -> list:
-    """
-    LazyFrame에서 unique 값만 안전하게 collect
-    
-    Args:
-        lf: LazyFrame
-        column: 컬럼명
-        
-    Returns:
-        Unique 값 리스트 (null 제외)
-    """
-    return lf.select(column).unique().drop_nulls().collect()[column].to_list()
-
-
-def combine_mdr_texts(lf: pl.LazyFrame) -> pl.LazyFrame:
-    """
-    중복 제거된 set을 먼저 컬럼에 할당 후 문자열 결합
-    """
-    cols = lf.collect_schema().names()
-    text_cols = sorted([c for c in cols if c.startswith('mdr_text_') and c.endswith('_text')])
-
-    pairs = []
-    for text_col in text_cols:
-        type_col = re.sub(r'_text$', '_text_type_code', text_col)
-        if type_col in cols:
-            pairs.append((text_col, type_col))
-    
-    if not pairs:
-        return lf.with_columns(pl.lit(None).alias('combined_mdr_text'))
-    
-    # 1. 중복 제거된 리스트를 컬럼에 할당
-    lf = lf.with_columns(
-        pl.struct([pl.col(tc) for tc, _ in pairs] + [pl.col(ty) for _, ty in pairs])
-        .map_elements(
-            lambda s: deduplicate_and_format(s, pairs),
-            return_dtype=pl.List(pl.String)
-        )
-        .alias('deduplicated_formatted')
-    )
-    
-    # 2. 리스트를 문자열로 결합
-    lf = lf.with_columns(
-        pl.col('deduplicated_formatted')
-        .list.join("\n\n")
-        .alias('combined_mdr_text')
-    )
-    
-    return lf.drop('deduplicated_formatted')
-
-
-def deduplicate_and_format(struct_val, pairs):
-    """텍스트 중복 제거하고 포맷팅까지 한번에"""
-    seen = {}
-    result = []
-    
-    for text_col, type_col in pairs:
-        text = struct_val.get(text_col)
-        type_val = struct_val.get(type_col)
-        
-        if text is not None and text != "" and text not in seen:
-            seen[text] = True
-            type_display = type_val if type_val else ""
-            result.append(f"[{type_display}]\n{text}")
-    
-    return result

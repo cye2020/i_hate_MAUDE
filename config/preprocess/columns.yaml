@@ -1,0 +1,91 @@
+# preprocess/columns.yaml
+# 컬럼 선택/제거 설정
+
+# 1차 열 제거 (스코핑 전)
+column_drop_1st:
+  verbose: true
+  
+  # MAUDE 데이터
+  maude:
+    mode: whitelist  # 'whitelist' 또는 'blacklist'
+    patterns: []  # 정규표현식 패턴 리스트
+    cols:  # Whitelist로 유지할 컬럼들
+      - mdr_report_key
+      - report_number
+      - adverse_event_flag
+      - product_problem_flag
+      - date_of_event
+      - date_received
+      - device_date_of_manufacturer
+      - event_type
+      - previous_use_code
+      - single_use_flag
+      - reprocessed_and_reused_flag
+      - product_problems
+      - device_0_manufacturer_d_name
+      - device_0_manufacturer_d_postal_code
+      - device_0_brand_name
+      - device_0_catalog_number
+      - device_0_model_number
+      - device_0_udi_di
+      - device_0_lot_number
+      - device_0_udi_public
+      - device_0_device_report_product_code
+      - device_0_openfda_device_name
+      - device_0_device_operator
+      - device_0_openfda_device_class
+      - patient_0_patient_age
+      - patient_0_sequence_number_outcome
+      # mdr_text 관련 (패턴 매칭)
+  
+  # UDI 데이터
+  udi:
+    mode: blacklist  # UDI는 blacklist 방식
+    patterns:  # 제거할 패턴들
+      - "^customer_.*"
+      - "^device_sizes_.*"
+      - "^storage_.*"
+      - "^premarket_.*"
+      - "^gmdn_.*"
+    cols: []  # 추가로 제거할 개별 컬럼
+
+# 2차 열 제거 (최종 정제 후)
+column_drop_2nd:
+  verbose: true
+  
+  maude:
+    mode: whitelist
+    patterns: []
+    cols:  # 최종 유지할 컬럼들
+      - mdr_report_key
+      - adverse_event_flag
+      - product_problem_flag
+      - single_use_flag
+      - previous_use_code
+      - reprocessed_and_reused_flag
+      - event_type
+      - product_problems
+      - date_of_event
+      - date_received
+      - date_of_manufactured
+      - manufacturer
+      - brand
+      - model_number
+      - udi_di
+      - product_code
+      - device_name
+      - operator
+      - patient_age
+      # outcome_* (동적으로 포함)
+      - mdr_text
+  
+  udi:
+    mode: whitelist
+    patterns: []
+    cols:
+      - udi_di
+      - manufacturer
+      - brand
+      - model_number
+      - product_code
+      - device_name

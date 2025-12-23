@@ -1,0 +1,81 @@
+# ============================================
+# 데이터 클린징 설정
+# ============================================
+
+# NA/Unknown 패턴
+na_patterns:
+  patterns:
+    - "^None$"
+    - "^UNK"
+    - "^UNKNOWN$"
+    - "NOT APPLICABLE"
+    - "NOT REPORTED"
+    - "NOT AVAILABLE"
+    - "^N/A$"
+    - "^NA$"
+    - "^NI$"
+    - "^NULL$"
+    - "^$"
+    - "\\s+$"
+    - "^-+$"
+    - "^\\.$"
+  
+  case_sensitive: false
+  apply_to_all_text_columns: true
+
+# 텍스트 정규화
+text_normalization:
+  trim_whitespace: true
+  collapse_spaces: true
+  remove_non_printable: true
+  normalize_quotes: true
+  
+  # 대소문자 변환 (특정 컬럼만)
+  uppercase_columns:
+    - "manufacturer_d_name"
+    - "report_source_code"
+
+# UDI 추출
+udi_extraction:
+  extract_di_from_public: true
+  
+  di_patterns:
+    - "\\(01\\)(\\d{14})"          # GS1
+    - "\\+\\$\\$\\+(.*?)\\+\\$"    # HIBCC
+    - "=([0-9A-Z]{14,})"           # ICCBBA
+
+# 날짜 통합
+date_coalescing:
+  # 보고 날짜 우선순위
+  report_date_priority:
+    - "date_of_event"
+    - "date_received"
+    - "date_report"
+    - "device_0_date_received"
+  
+  # UDI 발행 날짜
+  udi_publish_date_priority:
+    - "publish_date"
+    - "date_record_created"
+  
+  # 날짜 검증
+  validation:
+    min_year: 1990
+    max_year: 2030
+    invalid_action: "set_null"
+
+# MDR 텍스트 처리
+mdr_text_cleaning:
+  columns:
+    - "mdr_text_0_text"
+    - "mdr_text_1_text"
+  
+  operations:
+    - "remove_html_tags"
+    - "remove_extra_whitespace"
+    - "normalize_line_breaks"
+  
+  # 텍스트 특징 추출
+  extract_features:
+    - "text_length"
+    - "word_count"
