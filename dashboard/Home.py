@@ -5,7 +5,6 @@ Streamlit 멀티페이지 대시보드 - 메인 홈페이지
 import streamlit as st
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from streamlit_datetime_picker import date_time_picker
 from millify import millify
 
 
@@ -24,7 +23,6 @@ if 'TODAY' not in st.session_state:
 
 TODAY = st.session_state.TODAY
 
-
 # ==================== 사이드바 ====================
 with st.sidebar:
     st.image("dashboard/assets/logo.png", width='stretch')
@@ -38,24 +36,26 @@ with st.sidebar:
     """)
     
     st.markdown('---')
-    # date = st.slider(
-    #     "기간 (년월)",
-    #     value=TODAY,
-    #     min_value=TODAY - relativedelta(years=3),
-    #     max_value = TODAY,
-    #     format="MM/YYYY",
-    # )
-    
-    st.markdown("#### 4.Month Picker")
-    default_value = TODAY
-    select_date = date_time_picker(
-        label="기간 (년월)",
-        placeholder='날짜를 선택하세요',
-        picker='month', maxDate=TODAY, format='YYYY-MM'
-    )
-    st.write(f"Month Picker: {select_date}")
-    if select_date:
-        print(select_date.strftime())
+
+    with st.container(horizontal=True):
+        year_range = 3
+        year = st.selectbox(
+            "년도",
+            range(TODAY.year - year_range + 1, TODAY.year+1),
+            index=year_range - 1,
+            format_func=lambda x: f"{x}년",
+            width="stretch"
+        )
+        st.space(1)  # 간격 추가
+        month = st.selectbox(
+            "월",
+            range(1, 13),
+            format_func=lambda x: f"{x:02d}월",
+            width="stretch"
+        )
+
+    selected_date = datetime(year, month, 1)
+    st.write(f"선택된 년월: {selected_date.strftime('%Y년 %m월')}")
     
     window = st.selectbox(
         label='관측 기간',
@@ -77,14 +77,14 @@ with st.sidebar:
 # ==================== 메인 콘텐츠 ====================
 
 # 헤더
-st.title("🏠 홈 대시보드")
-st.markdown("데이터 파이프라인과 ML 모델 모니터링을 위한 통합 대시보드입니다.")
+# st.title("🏠 홈 대시보드")
+# st.markdown("데이터 파이프라인과 ML 모델 모니터링을 위한 통합 대시보드입니다.")
 
 # 메인 영역 상단의 탭
-tab1, tab2, tab3 = st.tabs(["Overview", "Detailed Analysis", "Clustering Reports"])
+overview_tab, eda_tab, cluster_tab = st.tabs(["Overview", "Detailed Analysis", "Clustering Reports"])
 
 # 탭 내용
-with tab1:
+with overview_tab:
     st.session_state.current_tab = "Overview"
     st.header('Overview Dashboard')
 
@@ -93,9 +93,11 @@ with tab1:
 
     with col1:
         st.metric(
-            label="📁 총 데이터 건수",
+            label="📁 총 이상 사례 보고 건수",
             value="1,234,567",
-            delta="↑ 12.5%"
+            delta="12.5%",
+            delta_arrow='down',
+            delta_color='inverse'
         )
 
     with col2:
@@ -114,7 +116,7 @@ with tab1:
 
     st.markdown("---")
 
-with tab2:
+with eda_tab:
     st.session_state.current_tab = "EDA"
     st.header("Detailed Analysis")
     
@@ -172,33 +174,32 @@ with tab2:
     st.markdown("---")
     
 
-with tab3:
+with cluster_tab:
     st.session_state.current_tab = "Cluster"
     st.header("Cluster Reports")
-    
 
-# ==================== 최근 활동 ====================
-st.subheader("📝 최근 활동")
+    # ==================== 최근 활동 ====================
+    st.subheader("📝 최근 활동")
 
-with st.expander("최근 24시간 활동 내역", expanded=True):
-    # 샘플 활동 데이터
-    activities = [
-        {"time": "2시간 전", "event": "데이터 전처리 완료", "status": "✅"},
-        {"time": "5시간 전", "event": "모델 학습 시작", "status": "🔄"},
-        {"time": "8시간 전", "event": "새 데이터 수집 (1,500건)", "status": "✅"},
-        {"time": "12시간 전", "event": "배치 작업 완료", "status": "✅"},
-    ]
-    
-    for activity in activities:
-        col1, col2, col3 = st.columns([1, 5, 1])
-        with col1:
-            st.markdown(f"**{activity['time']}**")
-        with col2:
-            st.markdown(activity['event'])
-        with col3:
-            st.markdown(activity['status'])
+    with st.expander("최근 24시간 활동 내역", expanded=True):
+        # 샘플 활동 데이터
+        activities = [
+            {"time": "2시간 전", "event": "데이터 전처리 완료", "status": "✅"},
+            {"time": "5시간 전", "event": "모델 학습 시작", "status": "🔄"},
+            {"time": "8시간 전", "event": "새 데이터 수집 (1,500건)", "status": "✅"},
+            {"time": "12시간 전", "event": "배치 작업 완료", "status": "✅"},
+        ]
+        
+        for activity in activities:
+            col1, col2, col3 = st.columns([1, 5, 1])
+            with col1:
+                st.markdown(f"**{activity['time']}**")
+            with col2:
+                st.markdown(activity['event'])
+            with col3:
+                st.markdown(activity['status'])
 
-st.markdown("---")
+    st.markdown("---")
 
 # ==================== 시스템 상태 ====================
 st.subheader("🖥️ 시스템 상태")
