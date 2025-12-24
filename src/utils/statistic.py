@@ -450,6 +450,7 @@ class Chi2Test(StatisticalTest):
         iv_col: str, dv_col: str, 
         alpha: Optional[float] = None
     ):
+        alpha = alpha if alpha else self.alpha
         df = data[[iv_col, dv_col]]
         
         # 교차표
