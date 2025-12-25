@@ -1,6 +1,6 @@
 # filter_manager.py
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 import streamlit as st
 
 import sys
@@ -99,166 +99,122 @@ class SidebarManager:
 
         return selected_date
 
-    # ==================== Overview 대시보드 전용 ====================
+    # ==================== 범용 위젯 렌더러 ====================
 
-    def render_window_selector(self) -> Optional[int]:
-        """관측 기간 선택기 렌더링 (Overview 전용)
+    def _apply_format_func(self, template: str, value: Any) -> str:
+        """포맷 템플릿을 실제 값으로 변환
 
-        Returns:
-            선택된 관측 기간(개월) 또는 None
-        """
-        window_config = self.dashboard_config.get("window_selector", {})
-
-        if not window_config.get("enabled", False):
-            return None
-
-        options = window_config.get("options", [1, 3])
-        default = window_config.get("default", options[0])
-        label = window_config.get("label", "관측 기간")
-
-        window = st.selectbox(
-            label=f"### {label}",
-            options=options,
-            index=options.index(default) if default in options else 0,
-            format_func=lambda x: f"{x}개월",
-            key=f"{self.dashboard_type}_window"
-        )
-        st.markdown("---")
-
-        return window
-
-    # ==================== EDA 대시보드 전용 ====================
-
-    def render_category_selector(self) -> Optional[list]:
-        """분석 카테고리 선택기 렌더링 (EDA 전용)
+        Args:
+            template: 포맷 문자열 (예: "{value}개월")
+            value: 실제 값
 
         Returns:
-            선택된 카테고리 리스트 또는 None
+            포맷팅된 문자열
         """
-        category_config = self.dashboard_config.get("category_selector", {})
+        return template.format(value=value)
 
-        if not category_config.get("enabled", False):
-            return None
+    def render_widget(self, filter_config: Dict[str, Any]) -> Any:
+        """config 기반으로 Streamlit 위젯을 동적 렌더링
 
-        label = category_config.get("label", "카테고리 선택")
-        options = category_config.get("options", [])
-        default = category_config.get("default", [])
-        selector_type = category_config.get("type", "multiselect")
+        Args:
+            filter_config: 필터 설정 딕셔너리
+                - type: 위젯 타입 (selectbox, multiselect, slider, number_input 등)
+                - key: 위젯 고유 키
+                - label: 위젯 라벨
+                - args: 위젯별 인자 (options, min_value, max_value 등)
+                - caption: (선택) 값 표시 포맷 (예: "{value}개월")
 
+        Returns:
+            위젯에서 선택된 값
+        """
+        widget_type = filter_config.get("type")
+        key = filter_config.get("key")
+        label = filter_config.get("label", "")
+        args = filter_config.get("args", {})
+        caption_template = filter_config.get("caption")
+
+        # 위젯별 고유 key 생성 (dashboard_type_key)
+        widget_key = f"{self.dashboard_type}_{key}"
+
+        # 라벨 렌더링
         st.markdown(f"### {label}")
 
-        if selector_type == "multiselect":
-            selected = st.multiselect(
+        # 위젯 타입별 렌더링
+        selected_value = None
+
+        if widget_type == "selectbox":
+            options = args.get("options", [])
+            index = args.get("index", 0)
+            format_func_template = args.get("format_func")
+
+            # format_func 처리
+            selectbox_kwargs = {
+                "label": label,
+                "options": options,
+                "index": index,
+                "key": widget_key,
+                "label_visibility": "collapsed"
+            }
+
+            if format_func_template:
+                selectbox_kwargs["format_func"] = lambda x, template=format_func_template: self._apply_format_func(template, x)
+
+            selected_value = st.selectbox(**selectbox_kwargs)
+
+        elif widget_type == "multiselect":
+            options = args.get("options", [])
+            default = args.get("default", [])
+
+            selected_value = st.multiselect(
                 label=label,
                 options=options,
                 default=default,
-                key=f"{self.dashboard_type}_category",
+                key=widget_key,
                 label_visibility="collapsed"
             )
-        else:
-            selected = st.selectbox(
+
+        elif widget_type == "slider":
+            min_value = args.get("min_value", 0.0)
+            max_value = args.get("max_value", 1.0)
+            value = args.get("value", 0.5)
+            step = args.get("step", 0.01)
+            format_str = args.get("format", "%.2f")
+
+            selected_value = st.slider(
                 label=label,
-                options=options,
-                index=options.index(default[0]) if default and default[0] in options else 0,
-                key=f"{self.dashboard_type}_category",
+                min_value=min_value,
+                max_value=max_value,
+                value=value,
+                step=step,
+                format=format_str,
+                key=widget_key,
                 label_visibility="collapsed"
             )
 
-        st.markdown("---")
-        return selected
+        elif widget_type == "number_input":
+            min_value = args.get("min_value", 0)
+            max_value = args.get("max_value", 100)
+            value = args.get("value", 50)
+            step = args.get("step", 1)
 
-    def render_confidence_interval(self) -> Optional[float]:
-        """신뢰구간 선택기 렌더링 (EDA 전용)
+            selected_value = st.number_input(
+                label=label,
+                min_value=min_value,
+                max_value=max_value,
+                value=value,
+                step=step,
+                key=widget_key,
+                label_visibility="collapsed"
+            )
 
-        Returns:
-            선택된 신뢰구간 값 또는 None
-        """
-        ci_config = self.dashboard_config.get("confidence_interval", {})
+        # Caption 렌더링 (있는 경우)
+        if caption_template and selected_value is not None:
+            caption_text = self._apply_format_func(caption_template, selected_value)
+            st.caption(caption_text)
 
-        if not ci_config.get("enabled", False):
-            return None
-
-        label = ci_config.get("label", "신뢰구간")
-        min_val = ci_config.get("min", 0.8)
-        max_val = ci_config.get("max", 0.99)
-        default = ci_config.get("default", 0.95)
-        step = ci_config.get("step", 0.01)
-
-        st.markdown(f"### {label}")
-        ci_value = st.slider(
-            label=label,
-            min_value=min_val,
-            max_value=max_val,
-            value=default,
-            step=step,
-            format="%.2f",
-            key=f"{self.dashboard_type}_ci",
-            label_visibility="collapsed"
-        )
-        st.caption(f"선택: {ci_value:.0%}")
         st.markdown("---")
 
-        return ci_value
-
-    # ==================== Cluster 대시보드 전용 ====================
-
-    def render_model_selector(self) -> Optional[str]:
-        """모델 선택기 렌더링 (Cluster 전용)
-
-        Returns:
-            선택된 모델명 또는 None
-        """
-        model_config = self.dashboard_config.get("model_selector", {})
-
-        if not model_config.get("enabled", False):
-            return None
-
-        label = model_config.get("label", "모델 선택")
-        options = model_config.get("options", [])
-        default = model_config.get("default", options[0] if options else None)
-
-        st.markdown(f"### {label}")
-        model = st.selectbox(
-            label=label,
-            options=options,
-            index=options.index(default) if default in options else 0,
-            key=f"{self.dashboard_type}_model",
-            label_visibility="collapsed"
-        )
-        st.markdown("---")
-
-        return model
-
-    def render_training_period(self) -> Optional[int]:
-        """학습 기간 입력기 렌더링 (Cluster 전용)
-
-        Returns:
-            선택된 학습 기간(개월) 또는 None
-        """
-        period_config = self.dashboard_config.get("training_period", {})
-
-        if not period_config.get("enabled", False):
-            return None
-
-        label = period_config.get("label", "학습 기간")
-        min_val = period_config.get("min", 6)
-        max_val = period_config.get("max", 24)
-        default = period_config.get("default", 12)
-
-        st.markdown(f"### {label}")
-        period = st.number_input(
-            label=label,
-            min_value=min_val,
-            max_value=max_val,
-            value=default,
-            step=1,
-            key=f"{self.dashboard_type}_period",
-            label_visibility="collapsed"
-        )
-        st.caption(f"{period}개월")
-        st.markdown("---")
-
-        return period
+        return selected_value
 
     # ==================== 메인 렌더링 메서드 ====================
 
@@ -279,29 +235,13 @@ class SidebarManager:
             if selected_date:
                 filters['date'] = selected_date
 
-            # 대시보드별 필터
-            if self.dashboard_type == "overview":
-                window = self.render_window_selector()
-                if window:
-                    filters['window'] = window
-
-            elif self.dashboard_type == "eda":
-                categories = self.render_category_selector()
-                if categories:
-                    filters['categories'] = categories
-
-                ci_value = self.render_confidence_interval()
-                if ci_value:
-                    filters['confidence_interval'] = ci_value
-
-            elif self.dashboard_type == "cluster":
-                model = self.render_model_selector()
-                if model:
-                    filters['model'] = model
-
-                period = self.render_training_period()
-                if period:
-                    filters['training_period'] = period
+            # 대시보드별 필터 (config에서 동적으로 생성)
+            filter_configs = self.dashboard_config.get("filters", [])
+            for filter_config in filter_configs:
+                key = filter_config.get("key")
+                value = self.render_widget(filter_config)
+                if value is not None:
+                    filters[key] = value
 
         return filters
 

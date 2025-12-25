@@ -37,3 +37,15 @@ def show(filters=None):
         )
 
     st.markdown("---")
+
+
+def calculate_big_number():
+    pass
+
+def plot_defect_type_heatmap():
+    """선택된 기간 동안의 defect_type 구성 비율을 히트맵으로 그리기
+    """
+    pass
+
+def plot_report_count():
+    pass
