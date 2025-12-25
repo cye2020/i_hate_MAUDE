@@ -8,21 +8,35 @@ common:
       environment: "Development"
 
   date_selector:
-    enabled: true
+    enabled: false  # overview는 날짜 필터 사용 안함
     year_range: [-2, 0]  # 현재 년도 기준 범위
     default_year_index: 2
     default_month: 1
 
+  # 공통 필터 (모든 탭에서 사용)
+  filters:
+    - type: "selectbox"
+      key: "segment"
+      label: "분석 기준"
+      args:
+        options:
+          - label: "전체"
+            value: null
+          - label: "제조사"
+            value: "manufacturer_name"
+          - label: "제품군"
+            value: "product_code"
+          - label: "기기"
+            value: "udi_di"
+          - label: "클러스터"
+            value: "cluster"
+          - label: "결함 유형"
+            value: "defect_type"
+        index: 0
+
 dashboards:
   overview:
-    filters:
-      - type: "selectbox"
-        key: "window"
-        label: "관측 기간"
-        args:
-          options: [1, 3]
-          index: 0
-          format_func: "{value}개월"
+    filters: []  # overview는 별도 필터 없음 (segment만 사용)
 
   eda:
     filters:

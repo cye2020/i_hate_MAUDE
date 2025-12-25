@@ -113,7 +113,7 @@ class SidebarManager:
         """
         return template.format(value=value)
 
-    def render_widget(self, filter_config: Dict[str, Any]) -> Any:
+    def render_widget(self, filter_config: Dict[str, Any], is_common: bool = False) -> Any:
         """config 기반으로 Streamlit 위젯을 동적 렌더링
 
         Args:
@@ -123,6 +123,7 @@ class SidebarManager:
                 - label: 위젯 라벨
                 - args: 위젯별 인자 (options, min_value, max_value 등)
                 - caption: (선택) 값 표시 포맷 (예: "{value}개월")
+            is_common: 공통 필터 여부 (True면 common_key, False면 dashboard_type_key)
 
         Returns:
             위젯에서 선택된 값
@@ -133,8 +134,11 @@ class SidebarManager:
         args = filter_config.get("args", {})
         caption_template = filter_config.get("caption")
 
-        # 위젯별 고유 key 생성 (dashboard_type_key)
-        widget_key = f"{self.dashboard_type}_{key}"
+        # 위젯별 고유 key 생성
+        if is_common:
+            widget_key = f"common_{key}"  # 공통 필터는 모든 탭에서 값 유지
+        else:
+            widget_key = f"{self.dashboard_type}_{key}"  # 대시보드별 필터
 
         # 라벨 렌더링
         st.markdown(f"### {label}")
@@ -147,19 +151,36 @@ class SidebarManager:
             index = args.get("index", 0)
             format_func_template = args.get("format_func")
 
-            # format_func 처리
-            selectbox_kwargs = {
-                "label": label,
-                "options": options,
-                "index": index,
-                "key": widget_key,
-                "label_visibility": "collapsed"
-            }
+            # options가 dict 리스트인 경우 (label-value 형식)
+            if options and len(options) > 0 and isinstance(options[0], dict) and "label" in options[0]:
+                option_labels = [opt["label"] for opt in options]
+                option_values = [opt["value"] for opt in options]
 
-            if format_func_template:
-                selectbox_kwargs["format_func"] = lambda x, template=format_func_template: self._apply_format_func(template, x)
+                selected_label = st.selectbox(
+                    label=label,
+                    options=option_labels,
+                    index=index,
+                    key=widget_key,
+                    label_visibility="collapsed"
+                )
 
-            selected_value = st.selectbox(**selectbox_kwargs)
+                # label에 해당하는 value 찾기
+                selected_idx = option_labels.index(selected_label)
+                selected_value = option_values[selected_idx]
+            else:
+                # 기존 방식 (단순 리스트)
+                selectbox_kwargs = {
+                    "label": label,
+                    "options": options,
+                    "index": index,
+                    "key": widget_key,
+                    "label_visibility": "collapsed"
+                }
+
+                if format_func_template:
+                    selectbox_kwargs["format_func"] = lambda x, template=format_func_template: self._apply_format_func(template, x)
+
+                selected_value = st.selectbox(**selectbox_kwargs)
 
         elif widget_type == "multiselect":
             options = args.get("options", [])
@@ -234,6 +255,13 @@ class SidebarManager:
             selected_date = self.render_date_selector()
             if selected_date:
                 filters['date'] = selected_date
+
+            # 공통: 공통 필터 (모든 탭에서 공유)
+            common_filter_configs = self.common_config.get("filters", [])
+            for filter_config in common_filter_configs:
+                key = filter_config.get("key")
+                value = self.render_widget(filter_config, is_common=True)
+                filters[key] = value  # None이어도 저장 (전체 선택 의미)
 
             # 대시보드별 필터 (config에서 동적으로 생성)
             filter_configs = self.dashboard_config.get("filters", [])

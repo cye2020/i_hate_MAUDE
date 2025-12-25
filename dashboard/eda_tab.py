@@ -666,7 +666,7 @@ def show(filters=None):
                         if use_bar_chart:
                             # 막대 그래프: 제조사-제품군별 총 보고 건수
                             bar_chart_data = display_df.head(top_n).set_index("제조사-제품군")[["보고 건수"]]
-                            st.bar_chart(bar_chart_data, use_container_width=True)
+                            st.bar_chart(bar_chart_data, width='stretch')
                         else:
                             # 선 그래프: 년-월별 추이
                             # 피벗 테이블 생성 (년-월을 인덱스로, 제조사-제품군을 컬럼으로)
@@ -682,10 +682,10 @@ def show(filters=None):
                             pivot_df = pivot_df.sort_index()
                             
                             # 선 그래프 표시
-                            st.line_chart(pivot_df, use_container_width=True)
+                            st.line_chart(pivot_df, width='stretch')
                     
                     # 표 표시
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    st.dataframe(display_df, width='stretch', hide_index=True)
                 else:
                     st.info("선택한 조건에 해당하는 데이터가 없습니다.")
                 
@@ -824,13 +824,13 @@ def show(filters=None):
                         # 막대 차트 표시 (비율 기준)
                         st.bar_chart(
                             chart_data.set_index("결함 유형")[["비율(%)"]],
-                            use_container_width=True
+                            width='stretch'
                         )
                         
                         # 상세 데이터 테이블
                         st.dataframe(
                             chart_data[["결함 유형", "건수", "비율(%)"]],
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True
                         )
                     else:
@@ -850,7 +850,7 @@ def show(filters=None):
                     # 막대 차트로 전체 비교 표시
                     st.bar_chart(
                         pivot_df,
-                        use_container_width=True
+                        width='stretch'
                     )
                     
                     # 전체 데이터 테이블
@@ -863,7 +863,7 @@ def show(filters=None):
                             "count": "건수",
                             "percentage": "비율(%)"
                         }),
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True
                     )
             else:
@@ -1073,12 +1073,12 @@ def show(filters=None):
                         
                         # # 막대 차트 표시 (건수 기준)
                         # chart_data = display_df.set_index("문제 부품")[["건수"]]
-                        # st.bar_chart(chart_data, use_container_width=True)
+                        # st.bar_chart(chart_data, width='stretch')
                         
                         # 표 표시
                         st.dataframe(
                             display_df,
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True
                         )
                     else:
@@ -1265,7 +1265,7 @@ def show(filters=None):
                 # 표 표시
                 st.dataframe(
                     display_df,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True
                 )
                 

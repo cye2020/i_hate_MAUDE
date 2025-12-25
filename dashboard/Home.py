@@ -7,10 +7,12 @@ import streamlit as st
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from millify import millify
+import polars as pl
 import overview_tab as o_tab
 import eda_tab as e_tab
 import cluster_tab as c_tab
 from utils.filter_manager import create_sidebar
+from utils.dashboard_config import get_config
 
 
 # 프로젝트 루트 경로 설정
@@ -26,11 +28,40 @@ st.set_page_config(
 )
 
 
+# ==================== 데이터 로딩 ====================
+
+@st.cache_data
+def load_maude_data(cache_key: str) -> pl.DataFrame:
+    """Silver Stage3 (클러스터링) 데이터 로드
+
+    매월 1일에 자동 갱신 (cache_key가 변경되면 캐시 무효화)
+
+    Args:
+        cache_key: 캐시 키 (예: "2025-01") - 월이 바뀌면 자동 갱신
+    """
+    config = get_config()
+    data_path = config.get_silver_stage3_path(dataset='maude')
+
+    if not data_path.exists():
+        st.error(f"데이터 파일을 찾을 수 없습니다: {data_path}")
+        st.stop()
+
+    return pl.scan_parquet(data_path)
+
 # 세션 상태 초기화
 if 'TODAY' not in st.session_state:
     st.session_state.TODAY = datetime.now()
 
+# 매월 1일 기준으로 캐시 키 생성 (예: "2025-01")
+# 월이 바뀌면 cache_key가 달라져서 자동으로 새 데이터 로드
+cache_key = st.session_state.TODAY.strftime("%Y-%m")
+
+if 'data' not in st.session_state:
+    with st.spinner("데이터 로딩 중..."):
+        st.session_state.data = load_maude_data(cache_key)
+
 TODAY = st.session_state.TODAY
+maude_lf = st.session_state.data
 
 # ==================== 탭 선택 (세그먼트 컨트롤) ====================
 
@@ -66,7 +97,7 @@ filters = create_sidebar(current_tab)
 
 # 선택된 탭의 콘텐츠 표시
 if current_tab == "overview":
-    o_tab.show(filters)
+    o_tab.show(filters, maude_lf)
 elif current_tab == "eda":
     e_tab.show(filters)
 elif current_tab == "cluster":

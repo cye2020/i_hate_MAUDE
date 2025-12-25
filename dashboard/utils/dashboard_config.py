@@ -47,25 +47,43 @@ class DashboardConfig:
     
     # ==================== 경로 관련 ====================
     
-    def get_path(self, stage: str, dataset: str = 'maude') -> Path:
+    def get_path(self, stage: str, dataset: str = 'maude', silver_stage: Optional[str] = None) -> Path:
         """데이터 경로 반환
-        
+
         Args:
             stage: 'bronze', 'silver', 'gold'
             dataset: 'maude', 'udi'
-            
+            silver_stage: Silver 계층의 경우 'stage1_basic_cleaning', 'stage2_text_processing', 'stage3_clustering' 중 선택
+
         Returns:
             Path 객체
         """
         use_s3 = self._base['paths']['use_s3']
-        
+
         if use_s3:
             base = self._storage['s3']['paths'][stage]
         else:
             base = self._base['paths']['local'][stage]
-        
-        filename = self._base['datasets'][dataset][f'{stage}_file']
+
+        # Silver 계층이고 silver_stage가 지정된 경우
+        if stage == 'silver' and silver_stage and isinstance(self._base['datasets'][dataset].get('silver'), dict):
+            filename = self._base['datasets'][dataset]['silver'][silver_stage]
+        else:
+            # 기존 방식 (bronze, gold, 또는 udi의 silver)
+            filename = self._base['datasets'][dataset][f'{stage}_file']
+
         return Path(base) / filename
+
+    def get_silver_stage3_path(self, dataset: str = 'maude') -> Path:
+        """Silver Stage3 (클러스터링) 데이터 경로 반환 - 편의 메서드
+
+        Args:
+            dataset: 'maude', 'udi'
+
+        Returns:
+            Path 객체
+        """
+        return self.get_path('silver', dataset, silver_stage='stage3_clustering')
     
     def get_temp_dir(self) -> Path:
         """임시 디렉토리 경로"""
