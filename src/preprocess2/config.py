@@ -1,3 +1,4 @@
+# src/preprocess/config.py (전처리 전용 - 고수준)
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from config.config_loader import load_config
@@ -136,10 +137,6 @@ class PreprocessConfig:
         """저준수 제조사 기준"""
         return self._legacy_cleaning['manufacturer_compliance']['low_compliance_threshold']
     
-    def get_confidence_level_map(self) -> dict[str, str]:
-        """신뢰도 레벨 반환"""
-        return self._legacy_cleaning['confidence']['levels']
-    
     def get_confidence_level(self, match_type: str) -> str:
         """신뢰도 레벨 반환
         
@@ -157,10 +154,8 @@ class PreprocessConfig:
         return self._legacy_cleaning['date_fields']['udi']
     
     def get_full_group_columns(self) -> List[str]:
-        """UDI 디바이스 식별용 그룹화 컬럼"""
-        grouping = self._legacy_cleaning['grouping']
-        return grouping.get('device_identity') or grouping.get('full_group')
-
+        """그룹화 컬럼"""
+        return self._legacy_cleaning['grouping']['full_group']
     
     def get_join_key_column(self) -> str:
         """조인 키 컬럼"""
@@ -174,37 +169,7 @@ class PreprocessConfig:
         """
         key = 'on_success' if on_success else 'on_error'
         return self._legacy_cleaning['temp_files']['cleanup'][key]
-
-    def get_score_levels(self) -> List[int]:
-        """Score 매칭 단계 (내림차순)"""
-        return self._legacy_cleaning['score_matching']['score_levels']
-
-
-    def get_score_weights(self) -> Dict[str, int]:
-        """Score 계산 가중치"""
-        return self._legacy_cleaning['score_matching']['weights']
-
-
-    def require_unique_primary(self) -> bool:
-        """Primary UDI가 단일 후보여야 하는지 여부"""
-        return self._legacy_cleaning['score_matching'].get(
-            'require_unique_primary', True
-        )
-        
-    def get_match_type(self, key: str) -> str:
-        """매칭 타입 문자열 반환
-        
-        Args:
-            key: 'direct', 'secondary', 'meta', 'no_match' 등
-        """
-        return self._legacy_cleaning['match_types'][key]
-
-
-    def get_all_match_types(self) -> Dict[str, str]:
-        """전체 매칭 타입 맵"""
-        return self._legacy_cleaning['match_types']
-
-
+    
     # ==================== LLM Extraction 관련 ====================
     
     def get_llm_model_name(self) -> str:

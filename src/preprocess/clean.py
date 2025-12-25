@@ -4,11 +4,14 @@
 """
 
 import re
+from country_named_entity_recognition import find_countries
 import polars as pl
+import zlib
 import shutil
 from typing import Optional, Dict, List, Tuple
 from pathlib import Path
-from tqdm import trange
+from tqdm import tqdm, trange
+import cleantext as cl
 
 from src.utils import process_lazyframe_in_chunks, apply_mapping_to_columns
 
@@ -16,7 +19,7 @@ from src.utils import process_lazyframe_in_chunks, apply_mapping_to_columns
 class TextPreprocessor:
     """범용 텍스트 전처리 클래스 (Stateless)"""
     
-    def __init__(self, name: str = "default"):
+    def __init__(self, name: str = "default", remove_countries: bool = False, custom: bool = True):
         """
         Args:
             name: 전처리기 이름
@@ -24,6 +27,8 @@ class TextPreprocessor:
         self.name = name
         self._patterns = {'delete': [], 'remove': []}
         self._compiled = False
+        self.remove_countries = remove_countries
+        self.custom = custom
     
     def add_pattern(self, pattern: str, action: str, description: str = ""):
         """
@@ -88,6 +93,9 @@ class TextPreprocessor:
         """
         if text is None or text == '':
             return None
+
+        if not self.custom:
+            return cl.clean(text)
         
         self._compile()
         
@@ -104,8 +112,51 @@ class TextPreprocessor:
         for p in self._patterns['delete']:
             if p['regex'].match(text):
                 return None
+            
+        # 국가명 제거 (NER 기반, 옵션)
+        if self.remove_countries:
+            text = self._remove_country_names(text)
+            if not text:
+                return None
         
         return text if text else None
+
+    def _remove_country_names(self, text: str) -> str:
+        """
+        NER을 사용해 텍스트에서 국가명 제거
+        
+        Args:
+            text: 입력 텍스트
+            
+        Returns:
+            국가명이 제거된 텍스트
+            
+        Example:
+            >>> self._remove_country_names('ALLERGAN (COSTA RICA)')
+            'ALLERGAN'
+        """
+        if not text:
+            return text
+        
+        try:
+            # 국가명 찾기
+            countries_found = find_countries(text)
+            
+            if not countries_found:
+                return text
+            
+            match_country = countries_found[0][1][0]
+            regex = re.compile(match_country, re.IGNORECASE)
+            text = regex.sub('', text).strip()
+            if not text:
+                return None
+            
+            return text
+            
+        except Exception as e:
+            # NER 실패 시 원본 텍스트 반환
+            print(f"Warning: Failed to remove country names from '{text}': {e}")
+            return text
     
     def create_mapping_dict(self, unique_values: pl.Series) -> Dict[str, Optional[str]]:
         """
@@ -117,7 +168,13 @@ class TextPreprocessor:
         Returns:
             {원본: 클린징된값} 딕셔너리
         """
-        return {val: self.clean(val) for val in unique_values}
+        values = unique_values.to_list()
+
+        mapping = {}
+        for val in tqdm(values, desc="Cleaning", total=len(values)):
+            mapping[val] = self.clean(val)
+
+        return mapping
 
     def apply_to_lazyframe(
         self,
@@ -149,9 +206,11 @@ class TextPreprocessor:
             unique_vals = lf.select(col).unique().collect()[col]
             all_unique_values.update(unique_vals)
         
+        all_unique_values = list(all_unique_values)
         print(f"[{self.name}] Creating mapping for {len(all_unique_values):,} unique values...")
-        mapping_dict = self.create_mapping_dict(pl.Series(list(all_unique_values)))
-        
+        mapping_dict = self.create_mapping_dict(
+            pl.Series(all_unique_values, dtype=pl.Utf8)
+        )        
         # 통계
         original_count = len([v for v in mapping_dict.values() if v is not None])
         deleted_count = len(all_unique_values) - original_count
@@ -162,13 +221,18 @@ class TextPreprocessor:
         def transform(chunk_lf: pl.LazyFrame) -> pl.LazyFrame:
             return apply_mapping_to_columns(chunk_lf, columns, mapping_dict)
         
+        root = Path(output_path).parent
+        column_str = "_".join(columns)
+        column_hash = zlib.adler32(column_str.encode())
+        temp_dir_name = root / f'temp_{self.name}_{column_hash}'
+
         # 3. Chunk 단위 처리 (utils 함수 사용)
         process_lazyframe_in_chunks(
             lf=lf,
             transform_func=transform,
             output_path=output_path,
             chunk_size=chunk_size,
-            temp_dir_name=f'temp_{self.name}_{"_".join(columns)}',
+            temp_dir_name=temp_dir_name,
             keep_temp=keep_temp,
             desc=f"[{self.name}] Processing {len(columns)} column(s)"
         )
@@ -191,10 +255,10 @@ class PreprocessorPresets:
             (r'.*\bNULL\b.*', 'DELETE', 'NULL'),
             (r'.*\bNONE\b.*', 'DELETE', 'NONE'),
             (r'.*\bNIL\b.*', 'DELETE', 'NIL'),
-            (r'.*\bN/?A\b.*', 'DELETE', 'N/A'),
+            (r'^N/A$', 'DELETE', 'N/A'), # 정확히 NA
             (r'.*\bN\.A\.?\b.*', 'DELETE', 'N.A'),
             (r'.*\bNI\b.*', 'DELETE', 'NI'),
-            (r'.*\bNA\b.*', 'DELETE', 'NA'),
+            (r'^NA$', 'DELETE', 'NA'), # 정확히 NA
             (r'.*\bNOT\s+AVAILABLE\b.*', 'DELETE', 'NOT AVAILABLE'),
             (r'.*\bUNAVAILABLE\b.*', 'DELETE', 'UNAVAILABLE'), 
             (r'.*MISSING.*', 'DELETE', 'MISSING'),
@@ -205,7 +269,7 @@ class PreprocessorPresets:
             (r'.*\bTRC\b.*', 'DELETE', 'TRC'),
             (r'.*\bQS\b.*', 'DELETE', 'QS'),
             (r'.*\bMSK\b.*', 'DELETE', 'MSK'),
-            (r'.*\bNAV\b.*', 'DELETE', 'NAV'),
+            (r'^NAV$', 'DELETE', 'NAV'), # 정확히 NA
             (r'.*\bINV\b.*', 'DELETE', 'INV'),
             (r'.*\bOTH\b.*', 'DELETE', 'OTH'),
             (r'.*\bPINF\b.*', 'DELETE', 'PINF'),
@@ -253,6 +317,7 @@ class PreprocessorPresets:
         # 회사명 특화 REMOVE 패턴 - 법인 형태 제거
         company_removes = [
             (r'\b(INC\.?|INCORPORATED)\b', 'REMOVE', 'INC'),
+            (r'\b(OPERATIONS)\b', 'REMOVE', 'OPERATIONS'),
             (r'\b(CO\.?|COMPANY)\b', 'REMOVE', 'CO'),
             (r'\b(CORP\.?|CORPORATION)\b', 'REMOVE', 'CORP'),
             (r'\b(LTD\.?|LIMITED)\b', 'REMOVE', 'LTD'),
@@ -316,15 +381,19 @@ def create_udi_preprocessor() -> TextPreprocessor:
 
 def create_company_preprocessor() -> TextPreprocessor:
     """회사명 전처리기 생성"""
-    return TextPreprocessor("CompanyName").add_patterns(
+    return TextPreprocessor("CompanyName", remove_countries=True).add_patterns(
         PreprocessorPresets.company_name_patterns()
     )
 
-def create_generic_preprocessor() -> TextPreprocessor:
-    """일반 텍스트 전처리기 생성"""
-    return TextPreprocessor("GenericText").add_patterns(
+def create_number_preprocessor() -> TextPreprocessor:
+    """일반 숫자 전처리기 생성"""
+    return TextPreprocessor("GenericNumber").add_patterns(
         PreprocessorPresets.generic_text_patterns()
     )
+    
+def create_generic_preprocessor() -> TextPreprocessor:
+    """일반 텍스트 전처리기 생성"""
+    return TextPreprocessor("GenericText", custom=False)
 
 def create_email_preprocessor() -> TextPreprocessor:
     """이메일 전처리기 생성"""
@@ -364,7 +433,8 @@ if __name__ == "__main__":
         'A & B Company',
         "'POLARSTEM¿'",
         'JOHNSON & JOHNSON SURGICAL VISION',
-        'UNKNOWN'
+        'UNKNOWN',
+        'HEARTMATE®, MOBILE POWER UNIT, NA'
     ]
     for company in company_tests:
         cleaned = company_preprocessor.clean(company)
@@ -392,7 +462,7 @@ if __name__ == "__main__":
         'id': range(100),
         'udi': ['00012345678901', 'UNKNOWN', '0+M724', None] * 25,
         'company': ['Apple Inc.', 'Google LLC', 'UNKNOWN', 'Samsung Co.'] * 25, 
-        'brand': ['\'POLARSTEM¿\'', 'Google LLC', 'UNKNOWN', 'Samsung Co.'] * 25
+        'brand': ['\'POLARSTEM¿\'', 'Google LLC', 'N/A', 'HEARTMATE®, MOBILE POWER UNIT, NA'] * 25
     }
     lf = pl.LazyFrame(data)
     
@@ -406,7 +476,8 @@ if __name__ == "__main__":
     )
     
     # 회사명 컬럼 전처리
-    company_output = Path('cleaned_company.parquet')
+    root = Path(__file__).parent
+    company_output = root / Path('cleaned_company.parquet')
     
     # 이전 결과를 다시 로드해서 처리
     lf_cleaned = pl.scan_parquet(udi_output)

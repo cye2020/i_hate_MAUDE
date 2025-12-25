@@ -1,0 +1,32 @@
+# config/preprocess/filtering.yaml
+
+scoping:
+  verbose: true
+  
+  maude:
+    # 그룹 단위로 조건 정의
+    groups:
+      # 그룹 1: 처음에 스코핑
+      - name: "high_risk_device"
+        patterns:
+          - [['*device_class$'], 'eq', '3']
+        combine: 'AND'
+      
+      # 그룹 2: 필수 필드 체크 (모두 만족해야 함)
+      - name: "critical_fields"
+        patterns:
+        cols:
+          - [['mdr_text_0_text'], 'is_not_null', null]
+        combine: 'OR'
+    
+    # 그룹 간 결합 방식
+    combine_groups: 'AND'  # (그룹1) AND (그룹2) AND (그룹3)
+
+  udi:
+    groups:
+      - name: "scoping"
+        patterns:
+          - [['*device_class$'], 'eq', '3']
+        combine: 'AND'
+    
+    combine_groups: 'AND'

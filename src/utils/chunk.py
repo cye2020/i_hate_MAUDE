@@ -50,28 +50,32 @@ def process_lazyframe_in_chunks(
     
     try:
         # 3. Chunk 단위 처리
+        num_chunks = (total_rows + chunk_size - 1) // chunk_size
+        width = len(str(num_chunks * chunk_size))
         for offset in trange(0, total_rows, chunk_size, desc=desc):
             chunk_lf = lf.slice(offset, chunk_size)
             
             # 변환 함수 적용
             chunk_transformed = transform_func(chunk_lf)
             
-            # Chunk 저장
-            chunk_path = temp_dir / f'chunk_{offset}.parquet'
-            chunk_transformed.sink_parquet(
+            chunk_df = chunk_transformed.collect()  # ← 여기서 확정
+            
+            # DataFrame을 바로 저장 (sink 대신 write)
+            chunk_path = temp_dir / f'chunk_{offset:0{width}d}.parquet'
+            chunk_df.write_parquet(
                 chunk_path,
                 compression='zstd',
                 compression_level=3
             )
-        
+        chunk_files = sorted(temp_dir.glob('chunk_*.parquet'))
         # 4. 병합
         print("Merging chunks...")
-        pl.scan_parquet(str(temp_dir / 'chunk_*.parquet')).sink_parquet(
+        pl.scan_parquet(chunk_files).sink_parquet(
             output_path,
             compression='zstd',
-            compression_level=3
+            compression_level=3,
+            maintain_order=True
         )
-        
         print(f"✓ Saved to {output_path}")
     
     finally:
