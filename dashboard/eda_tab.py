@@ -387,9 +387,13 @@ def get_window_dates(available_dates, window_size, as_of_month=None):
     
     return recent_months, base_months
 
-def show():
-    st.session_state.current_tab = "EDA"
-    st.header("Detailed Analysis")
+def show(filters=None):
+    st.title("📈 Detailed Analysis")
+
+    # 필터 값 사용
+    selected_date = filters.get("date")
+    categories = filters.get("categories", [])
+    confidence_interval = filters.get("confidence_interval", 0.95)
     
 
     # ==================== 월별 보고서 수 그래프 ====================

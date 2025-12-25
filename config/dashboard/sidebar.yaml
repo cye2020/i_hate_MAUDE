@@ -1,0 +1,64 @@
+# config/sidebar.yaml
+common:
+  header:
+    logo: "dashboard/assets/logo.png"
+    project_info:
+      version: "v1.0.0"
+      update_date: "2025-12-24"
+      environment: "Development"
+
+  date_selector:
+    enabled: true
+    year_range: [-2, 0]  # 현재 년도 기준 범위
+    default_year_index: 2
+    default_month: 1
+
+dashboards:
+  overview:
+    filters:
+      - type: "selectbox"
+        key: "window"
+        label: "관측 기간"
+        args:
+          options: [1, 3]
+          index: 0
+          format_func: "{value}개월"
+
+  eda:
+    filters:
+      - type: "multiselect"
+        key: "categories"
+        label: "분석 카테고리"
+        args:
+          options: ["매출", "비용", "수익"]
+          default: ["매출"]
+
+      - type: "slider"
+        key: "confidence_interval"
+        label: "신뢰구간"
+        args:
+          min_value: 0.8
+          max_value: 0.99
+          value: 0.95
+          step: 0.01
+          format: "%.2f"
+        caption: "{value:.0%}"
+
+  cluster:
+    filters:
+      - type: "selectbox"
+        key: "model"
+        label: "모델 선택"
+        args:
+          options: ["ARIMA", "Prophet", "LSTM"]
+          index: 1  # Prophet이 기본값
+
+      - type: "number_input"
+        key: "training_period"
+        label: "학습 기간(개월)"
+        args:
+          min_value: 6
+          max_value: 24
+          value: 12
+          step: 1
+        caption: "{value}개월"
