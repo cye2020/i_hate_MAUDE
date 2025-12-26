@@ -4,7 +4,8 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utils.analysis import calculate_big_numbers, get_risk_matrix_data
-from utils.constants import ColumnNames, PatientHarmLevels, Defaults
+from utils.constants import ColumnNames, PatientHarmLevels, Defaults, DisplayNames
+from dashboard.utils.ui_components import render_filter_summary_badge
 
 def plot_sparkline(data_list, key="sparkline"):
     """Sparkline 미니 차트 생성
@@ -281,7 +282,9 @@ def plot_risk_matrix(
 
 # overview_tab.py
 def show(filters=None, lf: pl.LazyFrame = None):
-    st.title("📊 Overview")
+    from utils.constants import DisplayNames
+
+    st.title(DisplayNames.FULL_TITLE_OVERVIEW)
 
     # 필터에서 segment 값 가져오기 (None이면 전체)
     segment = filters.get("segment", None)
@@ -297,6 +300,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # 세션 스테이트 초기화 (브러시 선택된 날짜 범위 저장)
     if 'selected_date_range' not in st.session_state:
         st.session_state.selected_date_range = None
+
+    # ==================== 필터 요약 배지 (공통 함수 사용) ====================
+    render_filter_summary_badge(date_range=date_range, segment=segment)
+    st.markdown("---")
 
     # 특정 값으로 드릴다운 필터 (Sidebar에서 선택한 segment 기준)
     segment_col = None

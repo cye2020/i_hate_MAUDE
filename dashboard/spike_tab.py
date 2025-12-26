@@ -8,6 +8,7 @@ from typing import Optional
 
 from dashboard.utils.analysis import perform_spike_detection, get_spike_time_series
 from dashboard.utils.constants import ColumnNames
+from dashboard.utils.ui_components import render_spike_filter_summary, render_bookmark_manager
 
 
 def show(filters=None, lf: pl.LazyFrame = None):
@@ -27,7 +28,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
             - min_methods: 앙상블 최소 방법 수
         lf: MAUDE 데이터 LazyFrame
     """
-    st.title("📈 Spike Detection")
+    from dashboard.utils.constants import DisplayNames
+
+    st.title(DisplayNames.FULL_TITLE_SPIKE)
 
     if lf is None:
         st.warning("데이터가 로드되지 않았습니다.")
@@ -46,6 +49,28 @@ def show(filters=None, lf: pl.LazyFrame = None):
     alpha = filters.get('alpha', 0.05)
     correction = filters.get('correction', 'fdr_bh')
     min_methods = filters.get('min_methods', 2)
+
+    # ==================== 북마크 관리 ====================
+    render_bookmark_manager(
+        tab_name="spike",
+        current_filters=filters,
+        filter_keys=[
+            "as_of_month", "window", "min_c_recent", "z_threshold",
+            "eps", "alpha", "correction", "min_methods"
+        ]
+    )
+
+    # ==================== 필터 요약 배지 (Spike 전용) ====================
+    render_spike_filter_summary(
+        as_of_month=as_of_month,
+        window=window,
+        min_c_recent=min_c_recent,
+        z_threshold=z_threshold,
+        alpha=alpha,
+        correction=correction,
+        min_methods=min_methods
+    )
+    st.markdown("---")
 
     # 스파이크 탐지 수행 (기본값으로 미리 계산)
     with st.spinner("스파이크 탐지 분석 중..."):
@@ -71,7 +96,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ========================================
     # 💡 SECTION 0: 핵심 인사이트 (최상단 배치)
     # ========================================
-    st.subheader("💡 핵심 발견사항")
+    st.subheader("💡 핵심 인사이트")
 
     if len(spike_df) > 0:
         # 1️⃣ 가장 위험한 스파이크 (3개 방법 모두 동의)
@@ -123,10 +148,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.success("✅ 현재 기간에 통계적으로 유의미한 스파이크가 탐지되지 않았습니다.")
         st.info("💡 이는 좋은 신호입니다. 제품 품질이 안정적으로 유지되고 있습니다.")
 
-    st.divider()
+    st.markdown("---")
 
     # ========================================
-    # 🚨 SECTION 1: 스파이크 탐지 요약 (Critical 정보)
+    # 🚨 SECTION 1: 스파이크 탐지 요약
     # ========================================
     st.subheader("🚨 스파이크 탐지 요약")
 
@@ -183,7 +208,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
         count_val = count["count"][0] if len(count) > 0 else 0
         col.metric(label, count_val)
 
-    st.divider()
+    st.markdown("---")
 
     # 시계열 데이터 준비 (12개월)
     end_date = datetime.strptime(as_of_month, "%Y-%m")
@@ -355,7 +380,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ========================================
     # 📥 SECTION 4: 데이터 다운로드
     # ========================================
-    st.divider()
+    st.markdown("---")
     col_download1, col_download2 = st.columns(2)
 
     with col_download1:

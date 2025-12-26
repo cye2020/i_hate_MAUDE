@@ -5,10 +5,15 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from dateutil.relativedelta import relativedelta
 from utils.analysis_cluster import cluster_check, get_available_clusters
-from utils.constants import ColumnNames, Defaults, ChartStyles
+from utils.constants import ColumnNames, Defaults, ChartStyles, DisplayNames, HarmColors
 from utils.data_utils import get_year_month_expr
+from dashboard.utils.ui_components import (
+    render_filter_summary_badge,
+    convert_date_range_to_months,
+    create_harm_pie_chart,
+    create_component_bar_chart
+)
 
 
 def show(filters=None, lf: pl.LazyFrame = None):
@@ -18,7 +23,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
         filters: 사이드바 필터 값
         lf: LazyFrame 데이터
     """
-    st.title("🔍 Cluster Analysis")
+    from utils.constants import DisplayNames
+
+    st.title(DisplayNames.FULL_TITLE_CLUSTER)
 
     # 데이터 확인
     if lf is None:
@@ -28,14 +35,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ==================== 사이드바 필터 추출 ====================
     date_range = filters.get("date_range", None)
 
-    # date_range를 문자열 리스트로 변환
-    selected_dates = []
-    if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
-        start_date, end_date = date_range
-        current = start_date
-        while current <= end_date:
-            selected_dates.append(current.strftime("%Y-%m"))
-            current = current + relativedelta(months=1)
+    # date_range를 문자열 리스트로 변환 (공통 함수 사용)
+    selected_dates = convert_date_range_to_months(date_range)
 
     # year_month 표현식 생성 (재사용)
     year_month_expr = get_year_month_expr(lf, ColumnNames.DATE_RECEIVED)
@@ -57,21 +58,24 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.warning("선택한 기간에 해당하는 클러스터가 없습니다.")
         return
 
-    # ==================== 필터 요약 배지 ====================
-    if date_range and len(date_range) == 2:
-        start, end = date_range
-        st.markdown(f"**📅 분석 기간:** {start.strftime('%Y-%m')} ~ {end.strftime('%Y-%m')} ({len(selected_dates)}개월)")
-    else:
-        st.markdown("**📅 분석 기간:** 전체")
-
+    # ==================== 필터 요약 배지 (공통 함수 사용) ====================
+    render_filter_summary_badge(date_range=date_range)
     st.markdown("---")
 
-    # ==================== 탭 구조 ====================
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # ==================== 핵심 인사이트 (상단 배치) ====================
+    render_cluster_insights(
+        lf,
+        available_clusters,
+        selected_dates,
+        year_month_expr
+    )
+    st.markdown("---")
+
+    # ==================== 탭 구조 (3개) ====================
+    tab1, tab2, tab3 = st.tabs([
         "📊 개별 분석",
         "⚖️ 클러스터 비교",
-        "🔍 전체 개요",
-        "💡 인사이트"
+        "🔍 전체 개요"
     ])
 
     # ==================== 탭 1: 개별 클러스터 상세 분석 ====================
@@ -95,15 +99,6 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ==================== 탭 3: 전체 클러스터 개요 ====================
     with tab3:
         render_cluster_overview(
-            lf,
-            available_clusters,
-            selected_dates,
-            year_month_expr
-        )
-
-    # ==================== 탭 4: 자동 인사이트 ====================
-    with tab4:
-        render_cluster_insights(
             lf,
             available_clusters,
             selected_dates,
@@ -188,39 +183,10 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
 
         harm_summary = cluster_data['harm_summary']
 
-        # 값이 0보다 큰 항목만 필터링
-        harm_data = [
-            ('Death', harm_summary['total_deaths'], ChartStyles.DANGER_COLOR),
-            ('Serious Injury', harm_summary['total_serious_injuries'], ChartStyles.WARNING_COLOR),
-            ('Minor Injury', harm_summary['total_minor_injuries'], '#ffd700'),
-            ('No Harm', harm_summary['total_no_injuries'], ChartStyles.SUCCESS_COLOR),
-            ('Unknown', harm_summary.get('total_unknown', 0), '#9CA3AF')
-        ]
+        # 공통 함수 사용
+        fig_pie = create_harm_pie_chart(harm_summary, height=400, show_legend=True)
 
-        filtered_harm_data = [(label, value, color) for label, value, color in harm_data if value > 0]
-
-        if filtered_harm_data:
-            harm_labels = [item[0] for item in filtered_harm_data]
-            harm_values = [item[1] for item in filtered_harm_data]
-            harm_colors = [item[2] for item in filtered_harm_data]
-
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=harm_labels,
-                values=harm_values,
-                hole=0.4,
-                marker=dict(colors=harm_colors, line=dict(color='#FFFFFF', width=2)),
-                textinfo='label+percent',
-                texttemplate='%{label}<br>%{percent}',
-                hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
-            )])
-
-            fig_pie.update_layout(
-                height=400,
-                margin=dict(l=20, r=20, t=20, b=20),
-                showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05)
-            )
-
+        if fig_pie:
             st.plotly_chart(fig_pie, width='stretch', config={'displayModeBar': False})
         else:
             st.info("환자 피해 데이터가 없습니다.")
@@ -230,33 +196,18 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
 
         top_components = cluster_data['top_components']
 
+        # 공통 함수 사용
         if len(top_components) > 0:
-            fig_bar = go.Figure()
-
-            fig_bar.add_trace(go.Bar(
-                x=top_components['count'].to_list(),
-                y=top_components[ColumnNames.PROBLEM_COMPONENTS].to_list(),
-                orientation='h',
-                marker=dict(
-                    color=top_components['count'].to_list(),
-                    colorscale='Blues',
-                    showscale=False
-                ),
-                text=[f"{r:.1f}%" for r in top_components['ratio'].to_list()],
-                textposition='outside',
-                hovertemplate='<b>%{y}</b><br>건수: %{x:,}<br>비율: %{text}<extra></extra>'
-            ))
-
-            fig_bar.update_layout(
-                xaxis_title="발생 건수",
-                yaxis_title="",
-                height=max(400, len(top_components) * 35),
-                margin=dict(l=20, r=20, t=20, b=40),
-                yaxis={'categoryorder': 'total ascending'},
-                showlegend=False
+            fig_bar = create_component_bar_chart(
+                component_df=top_components,
+                component_col=ColumnNames.PROBLEM_COMPONENTS,
+                count_col='count',
+                ratio_col='ratio',
+                top_n=top_n
             )
 
-            st.plotly_chart(fig_bar, width='stretch', config={'displayModeBar': False})
+            if fig_bar:
+                st.plotly_chart(fig_bar, width='stretch', config={'displayModeBar': False})
 
             # 상세 데이터
             with st.expander("📋 상세 데이터"):
@@ -593,8 +544,7 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
 
 def render_cluster_insights(lf, available_clusters, selected_dates, year_month_expr):
     """자동 인사이트 생성"""
-    st.markdown("### 💡 자동 발견 인사이트")
-    st.caption("데이터 기반으로 자동 생성된 주요 발견 사항입니다")
+    st.subheader("💡 핵심 인사이트")
 
     insights = []
 

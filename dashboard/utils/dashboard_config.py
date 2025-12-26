@@ -11,11 +11,11 @@ class DashboardConfig:
         self._base = load_config("base")
         self._storage = load_config("storage")
         self._pipeline = load_config("pipeline")
-        
+
         # 대시보드 설정들 (캐싱됨)
         self._sidebar = load_config("dashboard/sidebar")
-        
         self._defaults = load_config("dashboard/defaults")
+        self._ui_standards = load_config("dashboard/ui_standards")
     
     # ==================== 기본 설정 ====================
     
@@ -45,7 +45,12 @@ class DashboardConfig:
     def defaults(self) -> Dict[Any, Any]:
         """기본 설정"""
         return self._defaults
-    
+
+    @property
+    def ui_standards(self) -> Dict[Any, Any]:
+        """UI 표준화 설정"""
+        return self._ui_standards
+
     # ==================== 편의 메서드 ====================
     
     # def get_na_patterns(self) -> List[str]:
@@ -112,6 +117,8 @@ class DashboardConfig:
                 'storage': self._storage,
                 'pipeline': self._pipeline,
                 'sidebar': self._sidebar,
+                'defaults': self._defaults,
+                'ui_standards': self._ui_standards,
             }
         else:
             configs = {config_name: getattr(self, f'_{config_name}')}

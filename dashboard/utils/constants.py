@@ -14,6 +14,7 @@ from dashboard.utils.dashboard_config import get_config
 # Config 로드
 _config = get_config()
 _defaults_config = _config._defaults if hasattr(_config, '_defaults') else {}
+_ui_standards = _config._ui_standards if hasattr(_config, '_ui_standards') else {}
 
 
 class ColumnNames:
@@ -96,3 +97,97 @@ class ChartStyles:
         'margin': {'l': 50, 'r': 20, 't': 40, 'b': 80},
         'hovermode': 'x unified'
     })
+
+
+class DisplayNames:
+    """UI 표시 이름 (한글) - ui_standards.yaml에서 로드"""
+
+    # 페이지/탭 제목
+    _page_titles = _ui_standards.get('page_titles', {})
+    _icons = _ui_standards.get('icons', {})
+    _full_titles = _ui_standards.get('full_titles', {})
+
+    OVERVIEW = _page_titles.get('overview', '개요')
+    EDA = _page_titles.get('eda', '상세 분석')
+    SPIKE = _page_titles.get('spike', '급증 탐지')
+    CLUSTER = _page_titles.get('cluster', '클러스터 분석')
+
+    ICON_OVERVIEW = _icons.get('overview', '📊')
+    ICON_EDA = _icons.get('eda', '📈')
+    ICON_SPIKE = _icons.get('spike', '🚨')
+    ICON_CLUSTER = _icons.get('cluster', '🔍')
+
+    FULL_TITLE_OVERVIEW = _full_titles.get('overview', '📊 개요')
+    FULL_TITLE_EDA = _full_titles.get('eda', '📈 상세 분석')
+    FULL_TITLE_SPIKE = _full_titles.get('spike', '🚨 급증 탐지')
+    FULL_TITLE_CLUSTER = _full_titles.get('cluster', '🔍 클러스터 분석')
+
+    # 메트릭 라벨
+    _metric_labels = _ui_standards.get('metric_labels', {})
+
+    TOTAL_REPORTS = _metric_labels.get('total_reports', '총 보고 건수')
+    TOTAL_CASES = _metric_labels.get('total_cases', '전체 케이스')
+    CFR = _metric_labels.get('cfr', '치명률')
+    DEATH_RATE = _metric_labels.get('death_rate', '사망률')
+    DEATH_COUNT = _metric_labels.get('death_count', '사망')
+    SERIOUS_INJURY = _metric_labels.get('serious_injury', '중증 부상')
+    SERIOUS_INJURY_RATE = _metric_labels.get('serious_injury_rate', '중증 부상률')
+    MINOR_INJURY = _metric_labels.get('minor_injury', '경증 부상')
+    NO_HARM = _metric_labels.get('no_harm', '부상 없음')
+    SEVERE_HARM_RATE = _metric_labels.get('severe_harm_rate', '중대 피해 발생률')
+
+    MANUFACTURER = _metric_labels.get('manufacturer', '제조사')
+    PRODUCT = _metric_labels.get('product', '제품군')
+    DEFECT_TYPE = _metric_labels.get('defect_type', '결함 유형')
+    CLUSTER = _metric_labels.get('cluster', '클러스터')
+    COMPONENT = _metric_labels.get('component', '부품')
+    PROBLEM_COMPONENT = _metric_labels.get('problem_component', '문제 부품')
+
+    DEFECT_CONFIRMED_RATE = _metric_labels.get('defect_confirmed_rate', '제조사 결함 확정률')
+    MOST_CRITICAL_DEFECT_TYPE = _metric_labels.get('most_critical_defect_type', '가장 치명적인 결함 유형')
+    REPORT_COUNT = _metric_labels.get('report_count', '보고 건수')
+    RATIO = _metric_labels.get('ratio', '비율')
+    PERCENTAGE = _metric_labels.get('percentage', '백분율')
+
+    # 섹션 제목
+    _section_titles = _ui_standards.get('section_titles', {})
+
+    SUMMARY = _section_titles.get('summary', '요약')
+    DETAILED_ANALYSIS = _section_titles.get('detailed_analysis', '상세 분석')
+    INSIGHTS = _section_titles.get('insights', '인사이트')
+    DATA_TABLE = _section_titles.get('data_table', '상세 데이터')
+    TIME_SERIES = _section_titles.get('time_series', '시계열 분석')
+    MONTHLY_TREND = _section_titles.get('monthly_trend', '월별 추이')
+    MONTHLY_REPORTS = _section_titles.get('monthly_reports', '월별 보고서 수')
+    HARM_DISTRIBUTION = _section_titles.get('harm_distribution', '환자 피해 분포')
+    DEFECT_ANALYSIS = _section_titles.get('defect_analysis', '결함 분석')
+    COMPONENT_ANALYSIS = _section_titles.get('component_analysis', '문제 부품 분석')
+    CFR_ANALYSIS = _section_titles.get('cfr_analysis', '기기별 치명률(CFR) 분석')
+
+    # 메시지
+    _messages = _ui_standards.get('messages', {})
+
+    NO_DATA = _messages.get('no_data', '선택한 조건에 해당하는 데이터가 없습니다.')
+    LOADING = _messages.get('loading', '데이터 로딩 중...')
+    ANALYZING = _messages.get('analyzing', '분석 중...')
+
+
+class HarmColors:
+    """환자 피해 관련 색상 (ui_standards.yaml에서 로드)"""
+    _harm_colors = _ui_standards.get('colors', {}).get('harm', {})
+
+    DEATH = _harm_colors.get('death', '#DC2626')
+    SERIOUS_INJURY = _harm_colors.get('serious_injury', '#F59E0B')
+    MINOR_INJURY = _harm_colors.get('minor_injury', '#ffd700')
+    NO_HARM = _harm_colors.get('no_harm', '#2ca02c')
+    UNKNOWN = _harm_colors.get('unknown', '#9CA3AF')
+
+
+class SeverityColors:
+    """위험도/패턴 관련 색상 (ui_standards.yaml에서 로드)"""
+    _severity_colors = _ui_standards.get('colors', {}).get('severity', {})
+
+    SEVERE = _severity_colors.get('severe', '#DC2626')
+    ALERT = _severity_colors.get('alert', '#F59E0B')
+    ATTENTION = _severity_colors.get('attention', '#ffd700')
+    GENERAL = _severity_colors.get('general', '#2ca02c')

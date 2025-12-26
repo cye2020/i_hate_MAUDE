@@ -2,11 +2,9 @@
 import streamlit as st
 import polars as pl
 import pandas as pd
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
 # utils 함수 import
-from utils.constants import ColumnNames, Defaults, PatientHarmLevels
+from utils.constants import ColumnNames, Defaults, PatientHarmLevels, DisplayNames
 from utils.data_utils import get_year_month_expr
 from utils.filter_helpers import (
     get_available_filters,
@@ -24,175 +22,14 @@ from utils.analysis_cluster import (
     cluster_keyword_unpack,
     get_patient_harm_summary
 )
+from dashboard.utils.ui_components import (
+    render_filter_summary_badge,
+    convert_date_range_to_months,
+    create_harm_pie_chart,
+    render_bookmark_manager
+)
 
-
-def render_bookmark_manager(current_filters: dict):
-    """북마크 관리 UI
-
-    Args:
-        current_filters: 현재 사이드바 필터 상태
-    """
-    with st.expander("🔖 필터 설정 북마크", expanded=False):
-        col1, col2, col3 = st.columns([2, 1, 1])
-
-        with col1:
-            bookmark_name = st.text_input(
-                "북마크 이름",
-                placeholder="예: 2024년 상반기 분석",
-                key="bookmark_name_input"
-            )
-
-        with col2:
-            if st.button("💾 현재 설정 저장", key="save_bookmark_btn"):
-                if bookmark_name:
-                    save_bookmark(bookmark_name, current_filters)
-                    st.success(f"✅ '{bookmark_name}' 저장됨")
-                    st.rerun()
-                else:
-                    st.warning("북마크 이름을 입력하세요")
-
-        with col3:
-            if st.button("🗑️ 모두 삭제", key="delete_all_bookmarks_btn"):
-                if 'bookmarks' in st.session_state:
-                    del st.session_state.bookmarks
-                    st.success("모든 북마크 삭제됨")
-                    st.rerun()
-
-        # 저장된 북마크 목록
-        if 'bookmarks' in st.session_state and st.session_state.bookmarks:
-            st.markdown("**저장된 북마크:**")
-
-            for bookmark_id, bookmark_data in st.session_state.bookmarks.items():
-                col_a, col_b, col_c = st.columns([3, 1, 1])
-
-                with col_a:
-                    st.caption(f"📌 **{bookmark_data['name']}** - {bookmark_data['timestamp']}")
-
-                with col_b:
-                    if st.button("불러오기", key=f"load_{bookmark_id}"):
-                        load_bookmark(bookmark_data)
-                        st.info(f"'{bookmark_data['name']}' 불러오기 예약됨 (새로고침 필요)")
-                        st.rerun()
-
-                with col_c:
-                    if st.button("삭제", key=f"delete_{bookmark_id}"):
-                        del st.session_state.bookmarks[bookmark_id]
-                        st.success("북마크 삭제됨")
-                        st.rerun()
-
-                # 북마크 상세 정보
-                with st.expander(f"상세 정보: {bookmark_data['name']}", expanded=False):
-                    st.json(bookmark_data['filters'])
-        else:
-            st.info("저장된 북마크가 없습니다")
-
-
-def save_bookmark(name: str, current_filters: dict):
-    """현재 필터 설정을 북마크로 저장
-
-    Args:
-        name: 북마크 이름
-        current_filters: 현재 사이드바 필터 상태 (show 함수에서 전달)
-    """
-    if 'bookmarks' not in st.session_state:
-        st.session_state.bookmarks = {}
-
-    bookmark_id = f"bookmark_{len(st.session_state.bookmarks)}"
-    st.session_state.bookmarks[bookmark_id] = {
-        'name': name,
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'filters': current_filters.copy()  # 딕셔너리 복사
-    }
-
-
-def load_bookmark(bookmark_data: dict):
-    """저장된 북마크에서 필터 설정 불러오기
-
-    Note: 사이드바 위젯을 직접 제어할 수 없으므로,
-          세션 상태에 저장하고 다음 rerun에서 반영됨
-    """
-    filters = bookmark_data['filters']
-
-    # 사이드바 필터를 위한 세션 상태 설정
-    # (실제 반영은 Home.py의 create_sidebar에서 처리)
-    if filters.get('date_range'):
-        st.session_state['eda_bookmark_date_range'] = filters['date_range']
-
-    if filters.get('manufacturers'):
-        st.session_state['eda_bookmark_manufacturers'] = filters['manufacturers']
-
-    if filters.get('products'):
-        st.session_state['eda_bookmark_products'] = filters['products']
-
-    if filters.get('top_n'):
-        st.session_state['eda_bookmark_top_n'] = filters['top_n']
-
-    if filters.get('min_cases'):
-        st.session_state['eda_bookmark_min_cases'] = filters['min_cases']
-
-
-def convert_date_range_to_months(date_range):
-    """날짜 범위를 년-월 리스트로 변환
-
-    Args:
-        date_range: (start_date, end_date) tuple 또는 None
-                   각 요소는 str 또는 datetime 객체
-
-    Returns:
-        List[str]: 년-월 리스트 (예: ['2024-11', '2024-12', '2025-01'])
-    """
-    if not date_range or len(date_range) != 2:
-        return []
-
-    start_val, end_val = date_range
-
-    # datetime 객체인 경우 그대로 사용, str인 경우 변환
-    if isinstance(start_val, str):
-        start = datetime.strptime(start_val, "%Y-%m")
-    else:
-        start = start_val
-
-    if isinstance(end_val, str):
-        end = datetime.strptime(end_val, "%Y-%m")
-    else:
-        end = end_val
-
-    months = []
-    current = start
-    while current <= end:
-        months.append(current.strftime("%Y-%m"))
-        current += relativedelta(months=1)
-
-    return months
-
-
-
-
-def render_filter_summary_badge(date_range, manufacturers, products):
-    """현재 적용된 필터를 상단에 배지로 표시
-
-    Args:
-        date_range: (start, end) tuple
-        manufacturers: 선택된 제조사 리스트
-        products: 선택된 제품 리스트
-    """
-    badges = []
-
-    if date_range and len(date_range) == 2:
-        start, end = date_range
-        badges.append(f"📅 {start} ~ {end}")
-
-    if manufacturers and len(manufacturers) > 0:
-        badges.append(f"🏭 {len(manufacturers)}개 제조사")
-
-    if products and len(products) > 0:
-        badges.append(f"📦 {len(products)}개 제품")
-
-    if not badges:
-        badges.append("🌐 전체 데이터")
-
-    # 배지 표시
-    st.markdown(f"**적용된 필터:** {' · '.join(badges)}")
+# 기존 북마크 함수들은 ui_components.py의 render_bookmark_manager로 통합됨
 
 
 def show(filters=None, lf: pl.LazyFrame = None):
@@ -202,7 +39,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
         filters: 사이드바 필터 값 (딕셔너리)
         lf: LazyFrame 데이터 (Home.py에서 전달)
     """
-    st.title("📈 Detailed Analytics")
+    from utils.constants import DisplayNames
+
+    st.title(DisplayNames.FULL_TITLE_EDA)
 
     # 데이터 확인
     if lf is None:
@@ -216,14 +55,25 @@ def show(filters=None, lf: pl.LazyFrame = None):
     top_n = filters.get("top_n", Defaults.TOP_N)
     min_cases = filters.get("min_cases", Defaults.MIN_CASES)
 
-    # 날짜 범위 → 년-월 리스트 변환
+    # 날짜 범위 → 년-월 리스트 변환 (공통 함수 사용)
     selected_dates = convert_date_range_to_months(date_range)
 
-    # ==================== 북마크 관리 ====================
-    render_bookmark_manager(filters)
+    # ==================== 북마크 관리 (공통 함수 사용) ====================
+    render_bookmark_manager(
+        tab_name="eda",
+        current_filters=filters,
+        filter_keys=["date_range", "manufacturers", "products", "top_n", "min_cases"]
+    )
 
-    # ==================== 필터 요약 배지 ====================
-    render_filter_summary_badge(date_range, manufacturers, products)
+    # ==================== 필터 요약 배지 (공통 함수 사용) ====================
+    render_filter_summary_badge(
+        date_range=date_range,
+        manufacturers=manufacturers,
+        products=products,
+        top_n=top_n,
+        min_cases=min_cases
+    )
+    st.markdown("---")
 
     # ==================== 데이터 유효성 검사 ====================
     if not selected_dates:
@@ -329,7 +179,8 @@ def render_smart_insights(
         year_month_expr: 년-월 표현식
         min_cases: 최소 케이스 수
     """
-    st.markdown("### 💡 자동 발견 사항")
+    st.subheader("💡 핵심 인사이트")
+    st.markdown("---")
 
     insights = []
 

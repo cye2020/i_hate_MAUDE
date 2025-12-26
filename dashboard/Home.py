@@ -14,6 +14,7 @@ import cluster_tab as c_tab
 import spike_tab as s_tab
 from dashboard.utils.sidebar_manager import create_sidebar
 from utils.dashboard_config import get_config
+from utils.constants import DisplayNames
 
 
 # 프로젝트 루트 경로 설정
@@ -66,19 +67,19 @@ maude_lf = st.session_state.data
 
 # ==================== 탭 선택 (세그먼트 컨트롤) ====================
 
-# 탭 옵션 정의
+# 탭 옵션 정의 (한글 표준화)
 tab_options = {
-    "📊 Overview": "overview",
-    "📈 Detailed Analytics": 'eda',
-    "🚨 Spike Detection": "spike",
-    "🔍 Clustering Reports": "cluster"
+    DisplayNames.FULL_TITLE_OVERVIEW: "overview",
+    DisplayNames.FULL_TITLE_EDA: "eda",
+    DisplayNames.FULL_TITLE_SPIKE: "spike",
+    DisplayNames.FULL_TITLE_CLUSTER: "cluster"
 }
 
 # 세그먼트 컨트롤로 탭 선택
 selected_tab_display = st.segmented_control(
     label="대시보드 선택",
     options=list(tab_options.keys()),
-    default="📊 Overview",
+    default=DisplayNames.FULL_TITLE_OVERVIEW,
     label_visibility="collapsed",
     selection_mode="single",
     key="selected_tab_key"
@@ -86,7 +87,7 @@ selected_tab_display = st.segmented_control(
 
 # None인 경우 기본값 사용 (선택 해제 시 이전 값 유지를 위해 rerun)
 if selected_tab_display is None:
-    selected_tab_display = "📊 Overview"
+    selected_tab_display = DisplayNames.FULL_TITLE_OVERVIEW
     st.rerun()
 
 current_tab = tab_options[selected_tab_display]
