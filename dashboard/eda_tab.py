@@ -22,7 +22,7 @@ from utils.analysis import (
 from utils.analysis_cluster import (
     get_available_clusters,
     cluster_keyword_unpack,
-    get_event_type_summary
+    get_patient_harm_summary
 )
 
 
@@ -676,6 +676,7 @@ def render_cluster_and_event_analysis(
                 selected_dates=selected_dates if selected_dates else None,
                 selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
                 selected_products=selected_products if selected_products else None,
+                exclude_minus_one=False,  # defect_type은 문자열이므로 -1 제외 안 함
                 _year_month_expr=year_month_expr
             )
 
@@ -872,14 +873,14 @@ def render_cluster_and_event_analysis(
                     else:
                         st.info(f"'{selected_cluster}' defect type에 대한 문제 부품 데이터가 없습니다.")
 
-            # 좌측: 사건 유형별 분포 파이 차트
+            # 좌측: 환자 피해 분포 파이 차트
             with event_col:
-                st.markdown("### 사건 유형별 분포")
+                st.markdown("### 환자 피해 분포")
 
-                with st.spinner("사건 유형 데이터 로딩 중..."):
-                    event_summary = get_event_type_summary(
+                with st.spinner("환자 피해 데이터 로딩 중..."):
+                    harm_summary = get_patient_harm_summary(
                         lf,
-                        event_column=ColumnNames.EVENT_TYPE,
+                        event_column=ColumnNames.PATIENT_HARM,
                         date_col=date_col,
                         selected_dates=selected_dates if selected_dates else None,
                         selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
@@ -887,69 +888,92 @@ def render_cluster_and_event_analysis(
                         _year_month_expr=year_month_expr
                     )
 
-                total_deaths = event_summary['total_deaths']
-                total_injuries = event_summary['total_injuries']
-                total_malfunctions = event_summary['total_malfunctions']
-                total_all = event_summary['total_all']
+                total_deaths = harm_summary['total_deaths']
+                total_serious = harm_summary['total_serious_injuries']
+                total_minor = harm_summary['total_minor_injuries']
+                total_none = harm_summary['total_no_injuries']
+                total_unknown = harm_summary.get('total_unknown', 0)
+                total_all = total_deaths + total_serious + total_minor + total_none + total_unknown
 
                 if total_all > 0:
-                    # 파이 차트 데이터 준비
-                    pie_data = pd.DataFrame({
-                        '유형': ['사망', '부상', '오작동'],
-                        '건수': [total_deaths, total_injuries, total_malfunctions],
-                        '비율': [
-                            (total_deaths / total_all * 100),
-                            (total_injuries / total_all * 100),
-                            (total_malfunctions / total_all * 100)
-                        ]
-                    })
+                    # 값이 0보다 큰 항목만 필터링
+                    harm_data = [
+                        ('사망', total_deaths, '#DC2626'),
+                        ('중증 부상', total_serious, '#F59E0B'),
+                        ('경증 부상', total_minor, '#ffd700'),
+                        ('부상 없음', total_none, '#2ca02c'),
+                        ('Unknown', total_unknown, '#9CA3AF')
+                    ]
 
-                    # Plotly 파이 차트 생성
-                    fig_pie = go.Figure(data=[go.Pie(
-                        labels=pie_data['유형'],
-                        values=pie_data['건수'],
-                        hole=0.4,  # 도넛 차트 스타일
-                        marker=dict(
-                            colors=['#DC2626', '#F59E0B', '#3B82F6'],  # 빨강(사망), 주황(부상), 파랑(오작동)
-                            line=dict(color='#FFFFFF', width=2)
-                        ),
-                        textinfo='label+percent+value',
-                        texttemplate='%{label}<br>%{value:,}건<br>(%{percent})',
-                        hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
-                    )])
+                    # 값이 0보다 큰 항목만 선택
+                    filtered_harm_data = [(label, value, color) for label, value, color in harm_data if value > 0]
 
-                    fig_pie.update_layout(
-                        showlegend=True,
-                        legend=dict(
-                            orientation="v",
-                            yanchor="middle",
-                            y=0.5,
-                            xanchor="left",
-                            x=1.05
-                        ),
-                        height=400,
-                        margin=dict(l=20, r=20, t=20, b=20),
-                        paper_bgcolor='white',
-                        plot_bgcolor='white'
-                    )
+                    if filtered_harm_data:
+                        harm_labels = [item[0] for item in filtered_harm_data]
+                        harm_values = [item[1] for item in filtered_harm_data]
+                        harm_colors = [item[2] for item in filtered_harm_data]
 
-                    # 파이 차트 표시
-                    st.plotly_chart(fig_pie, width='stretch', config={'displayModeBar': False})
+                        # 파이 차트 데이터 준비
+                        pie_data = pd.DataFrame({
+                            '유형': harm_labels,
+                            '건수': harm_values,
+                            '비율': [(v / total_all * 100) for v in harm_values]
+                        })
+
+                        # Plotly 파이 차트 생성
+                        fig_pie = go.Figure(data=[go.Pie(
+                            labels=pie_data['유형'],
+                            values=pie_data['건수'],
+                            hole=0.4,  # 도넛 차트 스타일
+                            marker=dict(
+                                colors=harm_colors,
+                                line=dict(color='#FFFFFF', width=2)
+                            ),
+                            textinfo='label+percent+value',
+                            texttemplate='%{label}<br>%{value:,}건<br>(%{percent})',
+                            hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
+                        )])
+
+                        fig_pie.update_layout(
+                            showlegend=True,
+                            legend=dict(
+                                orientation="v",
+                                yanchor="middle",
+                                y=0.5,
+                                xanchor="left",
+                                x=1.05
+                            ),
+                            height=400,
+                            margin=dict(l=20, r=20, t=20, b=20),
+                            paper_bgcolor='white',
+                            plot_bgcolor='white'
+                        )
+
+                        # 파이 차트 표시
+                        st.plotly_chart(fig_pie, width='stretch', config={'displayModeBar': False})
+                    else:
+                        st.info("환자 피해 데이터가 없습니다.")
 
                     # 요약 정보
                     st.markdown("**전체 요약**")
-                    summary_col1, summary_col2, summary_col3 = st.columns(3)
+                    summary_col1, summary_col2, summary_col3, summary_col4, summary_col5 = st.columns(5)
 
                     with summary_col1:
                         st.metric("사망", f"{total_deaths:,}건")
 
                     with summary_col2:
-                        st.metric("부상", f"{total_injuries:,}건")
+                        st.metric("중증 부상", f"{total_serious:,}건")
 
                     with summary_col3:
-                        st.metric("오작동", f"{total_malfunctions:,}건")
+                        st.metric("경증 부상", f"{total_minor:,}건")
+
+                    with summary_col4:
+                        st.metric("부상 없음", f"{total_none:,}건")
+
+                    with summary_col5:
+                        st.metric("Unknown", f"{total_unknown:,}건")
                 else:
-                    st.info("사건 데이터가 없습니다.")
+                    st.info("환자 피해 데이터가 없습니다.")
         else:
             st.info("선택한 조건에 해당하는 defect type가 없습니다.")
 

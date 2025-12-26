@@ -115,7 +115,7 @@ class SidebarManager:
         """
         return template.format(value=value)
 
-    def render_widget(self, filter_config: Dict[str, Any], is_common: bool = False) -> Any:
+    def render_widget(self, filter_config: Dict[str, Any], is_common: bool = False, dynamic_options: Dict[str, List] = None) -> Any:
         """config 기반으로 Streamlit 위젯을 동적 렌더링
 
         Args:
@@ -126,6 +126,7 @@ class SidebarManager:
                 - args: 위젯별 인자 (options, min_value, max_value 등)
                 - caption: (선택) 값 표시 포맷 (예: "{value}개월")
             is_common: 공통 필터 여부 (True면 common_key, False면 dashboard_type_key)
+            dynamic_options: 동적으로 채워질 옵션들 (key: options 리스트)
 
         Returns:
             위젯에서 선택된 값
@@ -135,6 +136,11 @@ class SidebarManager:
         label = filter_config.get("label", "")
         args = filter_config.get("args", {})
         caption_template = filter_config.get("caption")
+
+        # 동적 옵션이 제공되면 args의 options를 덮어씀
+        if dynamic_options and key in dynamic_options:
+            args = args.copy()  # 원본 수정 방지
+            args["options"] = dynamic_options[key]
 
         # 위젯별 고유 key 생성
         if is_common:
@@ -241,7 +247,7 @@ class SidebarManager:
 
             # 3년 전 계산 (defaults.yaml에서 설정된 기간 사용)
             analysis_period_years = self.cfg.defaults.get("analysis_period_years", 3)
-            min_dt = (self.TODAY - relativedelta(years=analysis_period_years-1)).replace(day=1)
+            min_dt = (self.TODAY - relativedelta(years=analysis_period_years-1)).replace(day=1, month=1)
             max_dt = self.TODAY.replace(day=1)
             default_start_dt = (self.TODAY - relativedelta(years=1)).replace(day=1)
 
@@ -327,8 +333,11 @@ class SidebarManager:
 
     # ==================== 메인 렌더링 메서드 ====================
 
-    def render_sidebar(self) -> Dict[str, Any]:
+    def render_sidebar(self, dynamic_options: Dict[str, List] = None) -> Dict[str, Any]:
         """사이드바 전체 렌더링 및 선택된 값들 반환
+
+        Args:
+            dynamic_options: 동적으로 채워질 옵션들 (key: options 리스트)
 
         Returns:
             선택된 필터 값들을 담은 딕셔너리
@@ -348,14 +357,14 @@ class SidebarManager:
             common_filter_configs = self.common_config.get("filters", [])
             for filter_config in common_filter_configs:
                 key = filter_config.get("key")
-                value = self.render_widget(filter_config, is_common=True)
+                value = self.render_widget(filter_config, is_common=True, dynamic_options=dynamic_options)
                 filters[key] = value  # None이어도 저장 (전체 선택 의미)
 
             # 대시보드별 필터 (config에서 동적으로 생성)
             filter_configs = self.dashboard_config.get("filters", [])
             for filter_config in filter_configs:
                 key = filter_config.get("key")
-                value = self.render_widget(filter_config)
+                value = self.render_widget(filter_config, dynamic_options=dynamic_options)
                 if value is not None:
                     filters[key] = value
 

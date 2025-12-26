@@ -12,26 +12,28 @@ from .data_utils import apply_basic_filters
 @st.cache_data
 def get_available_clusters(
     _lf: pl.LazyFrame,
-    cluster_col: str = ColumnNames.DEFECT_TYPE,
+    cluster_col: str = ColumnNames.CLUSTER,
     date_col: str = ColumnNames.DATE_RECEIVED,
     selected_dates: Optional[List[str]] = None,
     selected_manufacturers: Optional[List[str]] = None,
     selected_products: Optional[List[str]] = None,
+    exclude_minus_one: bool = True,
     _year_month_expr: Optional[pl.Expr] = None
-) -> List[str]:
-    """필터링된 데이터에서 사용 가능한 defect type 목록 반환
+) -> List:
+    """필터링된 데이터에서 사용 가능한 cluster 목록 반환
 
     Args:
         _lf: LazyFrame
-        cluster_col: defect type 컬럼명
+        cluster_col: cluster 컬럼명
         date_col: 날짜 컬럼명
         selected_dates: 선택된 년-월 리스트
         selected_manufacturers: 선택된 제조사 리스트
         selected_products: 선택된 제품군 리스트
+        exclude_minus_one: -1 제외 여부
         _year_month_expr: 년-월 컬럼 생성 표현식
 
     Returns:
-        defect type 리스트
+        cluster 리스트 (정수형)
     """
     # 기본 필터 적용
     filtered_lf = apply_basic_filters(
@@ -47,6 +49,10 @@ def get_available_clusters(
     )
 
     filtered_lf = filtered_lf.filter(pl.col(cluster_col).is_not_null())
+
+    # -1 제외 옵션
+    if exclude_minus_one:
+        filtered_lf = filtered_lf.filter(pl.col(cluster_col) != -1)
 
     clusters = (
         filtered_lf
@@ -167,20 +173,20 @@ def cluster_keyword_unpack(
 
 
 @st.cache_data
-def get_event_type_summary(
+def get_patient_harm_summary(
     _lf: pl.LazyFrame,
-    event_column: str = ColumnNames.EVENT_TYPE,
+    event_column: str = ColumnNames.PATIENT_HARM,
     date_col: str = ColumnNames.DATE_RECEIVED,
     selected_dates: Optional[List[str]] = None,
     selected_manufacturers: Optional[List[str]] = None,
     selected_products: Optional[List[str]] = None,
     _year_month_expr: Optional[pl.Expr] = None
 ) -> dict:
-    """사건 유형별 분포 계산 (파이 차트용)
+    """환자 피해 분포 계산 (파이 차트용)
 
     Args:
         _lf: LazyFrame
-        event_column: 사건 유형 컬럼명
+        event_column: 환자 피해 컬럼명 (patient_harm)
         date_col: 날짜 컬럼명
         selected_dates: 선택된 년-월 리스트
         selected_manufacturers: 선택된 제조사 리스트
@@ -190,9 +196,9 @@ def get_event_type_summary(
     Returns:
         {
             'total_deaths': 사망 건수,
-            'total_injuries': 부상 건수,
-            'total_malfunctions': 오작동 건수,
-            'total_all': 전체 건수
+            'total_serious_injuries': 중증 부상 건수,
+            'total_minor_injuries': 경증 부상 건수,
+            'total_no_injuries': 부상 없음 건수
         }
     """
     # 기본 필터 적용
@@ -208,20 +214,165 @@ def get_event_type_summary(
         add_combo=False
     )
 
-    # 사건 유형별 집계
+    # 환자 피해별 집계 (No Harm과 No Apparent Injury 모두 체크)
     result = filtered_lf.select([
         (pl.col(event_column) == 'Death').sum().alias('death_count'),
-        (pl.col(event_column) == 'Injury').sum().alias('injury_count'),
-        (pl.col(event_column) == 'Malfunction').sum().alias('malfunction_count')
+        (pl.col(event_column) == 'Serious Injury').sum().alias('serious_injury_count'),
+        (pl.col(event_column) == 'Minor Injury').sum().alias('minor_injury_count'),
+        (
+            (pl.col(event_column) == 'No Apparent Injury') |
+            (pl.col(event_column) == 'No Harm')
+        ).sum().alias('no_injury_count'),
+        (pl.col(event_column) == 'Unknown').sum().alias('unknown_count')
     ]).collect()
 
     total_deaths = result['death_count'][0] if len(result) > 0 else 0
-    total_injuries = result['injury_count'][0] if len(result) > 0 else 0
-    total_malfunctions = result['malfunction_count'][0] if len(result) > 0 else 0
+    total_serious = result['serious_injury_count'][0] if len(result) > 0 else 0
+    total_minor = result['minor_injury_count'][0] if len(result) > 0 else 0
+    total_none = result['no_injury_count'][0] if len(result) > 0 else 0
+    total_unknown = result['unknown_count'][0] if len(result) > 0 else 0
 
     return {
         'total_deaths': total_deaths,
-        'total_injuries': total_injuries,
-        'total_malfunctions': total_malfunctions,
-        'total_all': total_deaths + total_injuries + total_malfunctions
+        'total_serious_injuries': total_serious,
+        'total_minor_injuries': total_minor,
+        'total_no_injuries': total_none,
+        'total_unknown': total_unknown
+    }
+
+
+@st.cache_data
+def cluster_check(
+    _lf: pl.LazyFrame,
+    cluster_name: int = 0,
+    cluster_col: str = ColumnNames.CLUSTER,
+    component_col: str = ColumnNames.PROBLEM_COMPONENTS,
+    event_col: str = ColumnNames.PATIENT_HARM,
+    date_col: str = ColumnNames.DATE_RECEIVED,
+    selected_dates: Optional[List[str]] = None,
+    selected_manufacturers: Optional[List[str]] = None,
+    selected_products: Optional[List[str]] = None,
+    top_n: int = Defaults.TOP_N,
+    _year_month_expr: Optional[pl.Expr] = None
+) -> dict:
+    """클러스터별로 분포와 top_n problem_component 차트를 확인
+
+    Args:
+        _lf: LazyFrame
+        cluster_name: 클러스터 번호 (정수형)
+        cluster_col: 클러스터 컬럼명
+        component_col: 부품 컬럼명
+        event_col: 이벤트 유형 컬럼명
+        date_col: 날짜 컬럼명
+        selected_dates: 선택된 년-월 리스트
+        selected_manufacturers: 선택된 제조사 리스트
+        selected_products: 선택된 제품군 리스트
+        top_n: 상위 N개 부품
+        _year_month_expr: 년-월 컬럼 생성 표현식
+
+    Returns:
+        {
+            'harm_summary': 환자 피해 분포,
+            'top_components': 상위 부품 DataFrame,
+            'total_count': 전체 케이스 수,
+            'time_series': 시계열 데이터 (월별 케이스 수)
+        }
+    """
+    # 기본 필터 적용
+    filtered_lf = apply_basic_filters(
+        _lf,
+        manufacturer_col=ColumnNames.MANUFACTURER,
+        product_col=ColumnNames.PRODUCT_CODE,
+        date_col=date_col,
+        selected_dates=selected_dates,
+        selected_manufacturers=selected_manufacturers,
+        selected_products=selected_products,
+        year_month_expr=_year_month_expr,
+        add_combo=False
+    )
+
+    # 클러스터 필터링
+    cluster_lf = filtered_lf.filter(pl.col(cluster_col) == cluster_name)
+
+    # 1. 전체 케이스 수
+    total_count = cluster_lf.select(pl.len()).collect()[0, 0]
+
+    # 2. 환자 피해 분포 (patient_harm 컬럼 사용)
+    harm_summary = cluster_lf.select([
+        (pl.col(event_col) == 'Death').sum().alias('death_count'),
+        (pl.col(event_col) == 'Serious Injury').sum().alias('serious_injury_count'),
+        (pl.col(event_col) == 'Minor Injury').sum().alias('minor_injury_count'),
+        (
+            (pl.col(event_col) == 'No Apparent Injury') |
+            (pl.col(event_col) == 'No Harm')
+        ).sum().alias('no_injury_count'),
+        (pl.col(event_col) == 'Unknown').sum().alias('unknown_count')
+    ]).collect()
+
+    event_dict = {
+        'total_deaths': harm_summary['death_count'][0] if len(harm_summary) > 0 else 0,
+        'total_serious_injuries': harm_summary['serious_injury_count'][0] if len(harm_summary) > 0 else 0,
+        'total_minor_injuries': harm_summary['minor_injury_count'][0] if len(harm_summary) > 0 else 0,
+        'total_no_injuries': harm_summary['no_injury_count'][0] if len(harm_summary) > 0 else 0,
+        'total_unknown': harm_summary['unknown_count'][0] if len(harm_summary) > 0 else 0
+    }
+
+    # 3. 상위 부품 추출 (cluster_keyword_unpack과 유사한 로직)
+    lf_temp = cluster_lf.select([component_col])
+
+    # 문자열을 리스트로 변환 (필요한 경우)
+    schema = lf_temp.collect_schema()
+    if schema[component_col] == pl.Utf8:
+        def safe_literal_eval(x):
+            if not x or x == 'null' or x == 'None':
+                return []
+            try:
+                result = ast.literal_eval(x)
+                return result if isinstance(result, list) else []
+            except (ValueError, SyntaxError):
+                return []
+
+        lf_temp = lf_temp.with_columns(
+            pl.col(component_col)
+            .map_elements(safe_literal_eval, return_dtype=pl.List(pl.Utf8))
+        )
+
+    # 리스트 explode 및 카운트
+    top_components_df = (
+        lf_temp
+        .explode(component_col)
+        .filter(pl.col(component_col).is_not_null())
+        .filter(pl.col(component_col) != "")
+        .with_columns(
+            pl.col(component_col).str.to_lowercase().str.strip_chars()
+        )
+        .group_by(component_col)
+        .agg(pl.len().alias('count'))
+        .sort('count', descending=True)
+        .head(top_n)
+        .with_columns(
+            (pl.col('count') / total_count * 100).round(2).alias('ratio')
+        )
+        .collect()
+    )
+
+    # 4. 시계열 데이터 (월별 케이스 수)
+    if _year_month_expr is None:
+        from .data_utils import get_year_month_expr
+        _year_month_expr = get_year_month_expr(_lf, date_col)
+
+    time_series_df = (
+        cluster_lf
+        .with_columns(_year_month_expr)
+        .group_by('year_month')
+        .agg(pl.len().alias('count'))
+        .sort('year_month')
+        .collect()
+    )
+
+    return {
+        'harm_summary': event_dict,
+        'top_components': top_components_df,
+        'total_count': total_count,
+        'time_series': time_series_df
     }

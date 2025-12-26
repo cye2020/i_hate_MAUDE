@@ -395,6 +395,7 @@ def get_spike_time_series(
     start_month: str,
     end_month: str,
     date_col: str = ColumnNames.DATE_RECEIVED,
+    window: int = 1,
 ) -> pl.DataFrame:
     """특정 키워드들의 시계열 데이터 추출
 
@@ -404,29 +405,21 @@ def get_spike_time_series(
         start_month: 시작 월 (예: "2024-01")
         end_month: 종료 월 (예: "2025-11")
         date_col: 날짜 컬럼명
+        window: 윈도우 크기 (기준 기간 계산용)
 
     Returns:
         시계열 데이터 DataFrame (columns: month, keyword, count, ratio)
+        ratio = 해당 월 count / 기준 기간(이전 12개월) 평균 count
     """
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
-
-    # 월 리스트 생성
-    start_date = datetime.strptime(start_month, "%Y-%m")
-    end_date = datetime.strptime(end_month, "%Y-%m")
-
-    months = []
-    current = start_date
-    while current <= end_date:
-        months.append(current.strftime("%Y-%m"))
-        current += relativedelta(months=1)
 
     # 월별 키워드 집계
     lf_with_month = _lf.with_columns(
         pl.col(date_col).cast(pl.Date).dt.strftime("%Y-%m").alias("month")
     )
 
-    # 키워드별 월별 집계
+    # 키워드별 월별 집계 (전체 기간)
     keyword_monthly = (
         lf_with_month
         .filter(pl.col(ColumnNames.DEFECT_TYPE).is_in(keywords))
@@ -436,26 +429,46 @@ def get_spike_time_series(
         .collect()
     )
 
-    # 전체 월별 집계 (비율 계산용)
-    total_monthly = (
-        lf_with_month
-        .group_by("month")
-        .agg(pl.len().alias("total_count"))
-        .sort("month")
-        .collect()
-    )
+    # 각 월별로 ratio 계산 (해당 월 / 이전 12개월 평균)
+    result_rows = []
 
-    # 비율 계산
-    result = (
-        keyword_monthly
-        .join(total_monthly, on="month", how="left")
-        .with_columns(
-            (pl.col("count") / pl.col("total_count") * 100)
-            .round(4)
-            .alias("ratio")
-        )
-        .select(["month", ColumnNames.DEFECT_TYPE, "count", "ratio"])
-        .rename({ColumnNames.DEFECT_TYPE: "keyword"})
+    for keyword in keywords:
+        keyword_data = keyword_monthly.filter(pl.col(ColumnNames.DEFECT_TYPE) == keyword)
+
+        for row in keyword_data.iter_rows(named=True):
+            month = row["month"]
+            count = row["count"]
+
+            # 이전 12개월 범위 계산
+            current_date = datetime.strptime(month, "%Y-%m")
+            base_end = current_date - relativedelta(months=window)
+            base_start = base_end - relativedelta(months=11)
+
+            # 기준 기간 데이터 추출
+            base_data = keyword_data.filter(
+                (pl.col("month") >= base_start.strftime("%Y-%m")) &
+                (pl.col("month") <= base_end.strftime("%Y-%m"))
+            )
+
+            # 기준 기간 평균 계산
+            if len(base_data) > 0:
+                base_avg = base_data["count"].mean()
+                ratio = (count + 1) / (base_avg + 1) if base_avg is not None else 1.0
+            else:
+                ratio = 1.0
+
+            result_rows.append({
+                "month": month,
+                "keyword": keyword,
+                "count": count,
+                "ratio": round(ratio, 2)
+            })
+
+    result = pl.DataFrame(result_rows)
+
+    # start_month ~ end_month 범위로 필터링
+    result = result.filter(
+        (pl.col("month") >= start_month) & (pl.col("month") <= end_month)
     )
 
     return result
@@ -511,6 +524,26 @@ def calculate_big_numbers(
     # 이전 기간 (바로 직전 months_diff개월)
     prev_start = current_start - relativedelta(months=months_diff)
     prev_end = current_end - relativedelta(months=months_diff)
+
+    # Sparkline용 데이터 (최근 6개월)
+    sparkline_start = current_end - relativedelta(months=5)
+    sparkline_start = sparkline_start.replace(day=1)
+
+    sparkline_data = _data.filter(
+        (pl.col(ColumnNames.DATE_RECEIVED) >= sparkline_start) &
+        (pl.col(ColumnNames.DATE_RECEIVED) <= current_end)
+    ).with_columns(
+        pl.col(ColumnNames.DATE_RECEIVED).dt.truncate("1mo").alias("month")
+    ).group_by("month").agg([
+        pl.len().alias("total_reports"),
+        pl.when(pl.col(ColumnNames.PATIENT_HARM).is_in(PatientHarmLevels.SERIOUS))
+          .then(1).otherwise(0).sum().alias("severe_harm_count"),
+        pl.when(pl.col(ColumnNames.DEFECT_CONFIRMED) == True)
+          .then(1).otherwise(0).sum().alias("defect_confirmed_count"),
+    ]).with_columns([
+        (pl.col("severe_harm_count") / pl.col("total_reports") * 100).alias("severe_harm_rate"),
+        (pl.col("defect_confirmed_count") / pl.col("total_reports") * 100).alias("defect_confirmed_rate"),
+    ]).sort("month").collect()
 
     # 현재 기간 데이터 집계
     latest_data = _data.filter(
@@ -603,10 +636,13 @@ def calculate_big_numbers(
     return {
         "total_reports": latest_total,
         "total_reports_delta": total_delta,
+        "total_reports_sparkline": sparkline_data["total_reports"].to_list(),
         "severe_harm_rate": latest_severe_harm_rate,
         "severe_harm_rate_delta": severe_harm_rate_delta,
+        "severe_harm_sparkline": sparkline_data["severe_harm_rate"].to_list(),
         "defect_confirmed_rate": latest_defect_confirmed_rate,
         "defect_confirmed_rate_delta": defect_confirmed_rate_delta,
+        "defect_sparkline": sparkline_data["defect_confirmed_rate"].to_list(),
         "most_critical_defect_type": most_critical_defect_type,
         "most_critical_defect_rate": most_critical_defect_rate,
         "prev_most_critical_defect_type": prev_most_critical_defect_type,

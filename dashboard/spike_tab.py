@@ -136,7 +136,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
             _lf=lf,
             keywords=top_keywords_filtered,
             start_month=start_month,
-            end_month=as_of_month
+            end_month=as_of_month,
+            window=window
         )
 
         if len(ts_df_filtered) > 0:
@@ -228,7 +229,6 @@ def get_top_n_keywords(
 
     return top_keywords
 
-
 def outlier_detect_check(
     lf: pl.LazyFrame,
     window: int = 1,
@@ -292,17 +292,22 @@ def create_spike_chart(
     Returns:
         Plotly Figure 객체
     """
+    import plotly.express as px
+
     fig = go.Figure()
 
     # 키워드별로 라인 추가
     keywords = ts_df["keyword"].unique().to_list()
 
-    # 색상 팔레트
-    colors = [
-        '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
-        '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
-        '#008080', '#e6beff', '#9a6324'
-    ]
+    # 동적 색상 생성 (Plotly의 qualitative 색상 팔레트 사용)
+    n_colors = len(keywords)
+    if n_colors <= 10:
+        colors = px.colors.qualitative.Plotly
+    elif n_colors <= 24:
+        colors = px.colors.qualitative.Dark24
+    else:
+        # 많은 키워드의 경우 색상 반복
+        colors = px.colors.qualitative.Dark24 * ((n_colors // 24) + 1)
 
     for i, keyword in enumerate(keywords):
         keyword_data = ts_df.filter(pl.col("keyword") == keyword).sort("month")
@@ -312,19 +317,24 @@ def create_spike_chart(
             y=keyword_data["ratio"].to_list(),
             mode='lines+markers',
             name=keyword,
-            line=dict(color=colors[i % len(colors)], width=2),
+            line=dict(color=colors[i], width=2),
             marker=dict(size=6),
             hovertemplate='<b>%{fullData.name}</b><br>' +
                          'Month: %{x}<br>' +
-                         'Ratio: %{y:.4f}%<br>' +
+                         'Ratio: %{y:.2f}x<br>' +
                          '<extra></extra>'
         ))
 
+    # y축 범위 계산
+    max_ratio = ts_df["ratio"].max() if len(ts_df) > 0 else z_threshold
+    y_max = max(max_ratio, z_threshold) + 0.5
+
     # 레이아웃 설정
     fig.update_layout(
-        title=f"Spike Detection - Keyword Proportion Over Time (Window: {window}M, Threshold: {z_threshold}σ)",
+        title=f"Spike Detection - Keyword Ratio Over Time (Window: {window}M, Threshold: {z_threshold:.1f}σ)",
         xaxis_title="Month",
-        yaxis_title="비율 (%) - 월별 전체 보고 대비",
+        yaxis_title="Ratio (배수) - 기준 기간 대비",
+        yaxis=dict(range=[0, y_max]),
         hovermode='x unified',
         height=600,
         legend=dict(
@@ -337,11 +347,21 @@ def create_spike_chart(
         margin=dict(l=50, r=150, t=80, b=50)
     )
 
+    # z-score 임계값 표시
+    fig.add_hline(
+        y=z_threshold,
+        line=dict(color="red", width=2, dash="dash"),
+        annotation_text=f"Z-score Threshold ({z_threshold}σ)",
+        annotation_position="right",
+        annotation_font=dict(color="red", size=10)
+    )
+
     # 기준 월 강조 (shapes를 사용하여 직접 그리기)
     if len(ts_df) > 0:
         # x축에서 as_of_month의 인덱스 찾기
         all_months = sorted(ts_df["month"].unique().to_list())
         if as_of_month in all_months:
+            # 수직선 추가
             fig.add_shape(
                 type="line",
                 x0=as_of_month,
@@ -349,7 +369,7 @@ def create_spike_chart(
                 y0=0,
                 y1=1,
                 yref="paper",
-                line=dict(color="red", width=2, dash="dash")
+                line=dict(color="blue", width=2, dash="dash")
             )
             # 주석 추가
             fig.add_annotation(
@@ -359,7 +379,7 @@ def create_spike_chart(
                 text="Analysis Month",
                 showarrow=False,
                 yshift=10,
-                font=dict(color="red", size=10)
+                font=dict(color="blue", size=10)
             )
 
     return fig

@@ -64,22 +64,30 @@ dashboards:
 
   cluster:
     filters:
-      - type: "selectbox"
-        key: "model"
-        label: "모델 선택"
+      - type: "month_range_picker"
+        key: "date_range"
+        label: "📅 분석 기간"
         args:
-          options: ["ARIMA", "Prophet", "LSTM"]
-          index: 1  # Prophet이 기본값
+          default_start: "2023-01"
+          default_end: "2025-12"
+
+      - type: "selectbox"
+        key: "selected_cluster"
+        label: "🔢 클러스터 선택"
+        args:
+          options: []  # cluster_tab.py에서 동적으로 채움
+          index: 0
+          format_func: "Cluster {value}"
 
       - type: "number_input"
-        key: "training_period"
-        label: "학습 기간(개월)"
+        key: "top_n"
+        label: "📊 상위 부품 개수"
         args:
-          min_value: 6
-          max_value: 24
-          value: 12
-          step: 1
-        caption: "{value}개월"
+          min_value: 5
+          max_value: 50
+          value: 10
+          step: 5
+        caption: "상위 {value}개"
 
   spike:
     filters:
