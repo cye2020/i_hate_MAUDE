@@ -387,7 +387,7 @@ def get_window_dates(available_dates, window_size, as_of_month=None):
     
     return recent_months, base_months
 
-def show(filters=None):
+def show(filters=None, lf: pl.LazyFrame = None):
     st.title("📈 Detailed Analysis")
 
     # 필터 값 사용
