@@ -1,15 +1,15 @@
-# eda_tab.py (리팩토링 버전)
+# eda_tab.py (전면 리팩토링 버전)
 import streamlit as st
 import polars as pl
 import pandas as pd
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 # utils 함수 import
-from utils.constants import ColumnNames, Defaults
-from utils.data_utils import get_year_month_expr, get_window_dates
+from utils.constants import ColumnNames, Defaults, PatientHarmLevels
+from utils.data_utils import get_year_month_expr
 from utils.filter_helpers import (
     get_available_filters,
-    get_manufacturers_by_dates,
-    get_products_by_manufacturers,
     get_available_defect_types
 )
 from utils.analysis import (
@@ -24,11 +24,14 @@ from utils.analysis_cluster import (
     cluster_keyword_unpack,
     get_patient_harm_summary
 )
-from datetime import datetime
 
 
-def render_bookmark_manager():
-    """북마크 관리 UI"""
+def render_bookmark_manager(current_filters: dict):
+    """북마크 관리 UI
+
+    Args:
+        current_filters: 현재 사이드바 필터 상태
+    """
     with st.expander("🔖 필터 설정 북마크", expanded=False):
         col1, col2, col3 = st.columns([2, 1, 1])
 
@@ -40,16 +43,16 @@ def render_bookmark_manager():
             )
 
         with col2:
-            if st.button("💾 현재 설정 저장", width='stretch'):
+            if st.button("💾 현재 설정 저장", key="save_bookmark_btn"):
                 if bookmark_name:
-                    save_bookmark(bookmark_name)
+                    save_bookmark(bookmark_name, current_filters)
                     st.success(f"✅ '{bookmark_name}' 저장됨")
                     st.rerun()
                 else:
                     st.warning("북마크 이름을 입력하세요")
 
         with col3:
-            if st.button("🗑️ 모두 삭제", width='stretch'):
+            if st.button("🗑️ 모두 삭제", key="delete_all_bookmarks_btn"):
                 if 'bookmarks' in st.session_state:
                     del st.session_state.bookmarks
                     st.success("모든 북마크 삭제됨")
@@ -66,13 +69,13 @@ def render_bookmark_manager():
                     st.caption(f"📌 **{bookmark_data['name']}** - {bookmark_data['timestamp']}")
 
                 with col_b:
-                    if st.button("불러오기", key=f"load_{bookmark_id}", width='stretch'):
+                    if st.button("불러오기", key=f"load_{bookmark_id}"):
                         load_bookmark(bookmark_data)
-                        st.success(f"'{bookmark_data['name']}' 불러옴")
+                        st.info(f"'{bookmark_data['name']}' 불러오기 예약됨 (새로고침 필요)")
                         st.rerun()
 
                 with col_c:
-                    if st.button("삭제", key=f"delete_{bookmark_id}", width='stretch'):
+                    if st.button("삭제", key=f"delete_{bookmark_id}"):
                         del st.session_state.bookmarks[bookmark_id]
                         st.success("북마크 삭제됨")
                         st.rerun()
@@ -84,175 +87,220 @@ def render_bookmark_manager():
             st.info("저장된 북마크가 없습니다")
 
 
-def save_bookmark(name: str):
-    """현재 필터 설정을 북마크로 저장"""
+def save_bookmark(name: str, current_filters: dict):
+    """현재 필터 설정을 북마크로 저장
+
+    Args:
+        name: 북마크 이름
+        current_filters: 현재 사이드바 필터 상태 (show 함수에서 전달)
+    """
     if 'bookmarks' not in st.session_state:
         st.session_state.bookmarks = {}
-
-    # 현재 필터 상태 수집
-    current_filters = {
-        'selected_dates': st.session_state.get('prev_selected_dates', []),
-        'selected_manufacturers': st.session_state.get('prev_selected_manufacturers', []),
-        'selected_products': st.session_state.get('prev_selected_products', []),
-        'as_of_month': st.session_state.get('selected_as_of_month'),
-        'window': st.session_state.get('selected_window'),
-        'top_n': st.session_state.get('top_n'),
-        'min_cases': st.session_state.get('min_cases')
-    }
 
     bookmark_id = f"bookmark_{len(st.session_state.bookmarks)}"
     st.session_state.bookmarks[bookmark_id] = {
         'name': name,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'filters': current_filters
+        'filters': current_filters.copy()  # 딕셔너리 복사
     }
 
 
 def load_bookmark(bookmark_data: dict):
-    """저장된 북마크에서 필터 설정 불러오기"""
+    """저장된 북마크에서 필터 설정 불러오기
+
+    Note: 사이드바 위젯을 직접 제어할 수 없으므로,
+          세션 상태에 저장하고 다음 rerun에서 반영됨
+    """
     filters = bookmark_data['filters']
 
-    # 세션 상태에 필터 값 복원
-    if filters.get('selected_dates'):
-        st.session_state.prev_selected_dates = filters['selected_dates']
+    # 사이드바 필터를 위한 세션 상태 설정
+    # (실제 반영은 Home.py의 create_sidebar에서 처리)
+    if filters.get('date_range'):
+        st.session_state['eda_bookmark_date_range'] = filters['date_range']
 
-    if filters.get('selected_manufacturers'):
-        st.session_state.prev_selected_manufacturers = filters['selected_manufacturers']
+    if filters.get('manufacturers'):
+        st.session_state['eda_bookmark_manufacturers'] = filters['manufacturers']
 
-    if filters.get('selected_products'):
-        st.session_state.prev_selected_products = filters['selected_products']
-
-    if filters.get('as_of_month'):
-        st.session_state.selected_as_of_month = filters['as_of_month']
-
-    if filters.get('window'):
-        st.session_state.selected_window = filters['window']
+    if filters.get('products'):
+        st.session_state['eda_bookmark_products'] = filters['products']
 
     if filters.get('top_n'):
-        st.session_state.top_n = filters['top_n']
+        st.session_state['eda_bookmark_top_n'] = filters['top_n']
 
     if filters.get('min_cases'):
-        st.session_state.min_cases = filters['min_cases']
+        st.session_state['eda_bookmark_min_cases'] = filters['min_cases']
+
+
+def convert_date_range_to_months(date_range):
+    """날짜 범위를 년-월 리스트로 변환
+
+    Args:
+        date_range: (start_date, end_date) tuple 또는 None
+                   각 요소는 str 또는 datetime 객체
+
+    Returns:
+        List[str]: 년-월 리스트 (예: ['2024-11', '2024-12', '2025-01'])
+    """
+    if not date_range or len(date_range) != 2:
+        return []
+
+    start_val, end_val = date_range
+
+    # datetime 객체인 경우 그대로 사용, str인 경우 변환
+    if isinstance(start_val, str):
+        start = datetime.strptime(start_val, "%Y-%m")
+    else:
+        start = start_val
+
+    if isinstance(end_val, str):
+        end = datetime.strptime(end_val, "%Y-%m")
+    else:
+        end = end_val
+
+    months = []
+    current = start
+    while current <= end:
+        months.append(current.strftime("%Y-%m"))
+        current += relativedelta(months=1)
+
+    return months
+
+
+
+
+def render_filter_summary_badge(date_range, manufacturers, products):
+    """현재 적용된 필터를 상단에 배지로 표시
+
+    Args:
+        date_range: (start, end) tuple
+        manufacturers: 선택된 제조사 리스트
+        products: 선택된 제품 리스트
+    """
+    badges = []
+
+    if date_range and len(date_range) == 2:
+        start, end = date_range
+        badges.append(f"📅 {start} ~ {end}")
+
+    if manufacturers and len(manufacturers) > 0:
+        badges.append(f"🏭 {len(manufacturers)}개 제조사")
+
+    if products and len(products) > 0:
+        badges.append(f"📦 {len(products)}개 제품")
+
+    if not badges:
+        badges.append("🌐 전체 데이터")
+
+    # 배지 표시
+    st.markdown(f"**적용된 필터:** {' · '.join(badges)}")
 
 
 def show(filters=None, lf: pl.LazyFrame = None):
-    """EDA 탭 메인 함수
+    """EDA 탭 메인 함수 (전면 리팩토링)
 
     Args:
-        filters: 사이드바 필터 값
+        filters: 사이드바 필터 값 (딕셔너리)
         lf: LazyFrame 데이터 (Home.py에서 전달)
     """
     st.title("📈 Detailed Analytics")
-
-    # 북마크 관리 UI (상단 배치)
-    render_bookmark_manager()
-
-    # 사이드바 필터 값 가져오기
-    selected_year_month = filters.get("as_of_month")  # 기준 월
-    sidebar_window = filters.get("window", 1)  # 윈도우 크기
-    sidebar_top_n = filters.get("top_n", Defaults.TOP_N)  # 상위 N개
-    sidebar_min_cases = filters.get("min_cases", Defaults.MIN_CASES)  # 최소 건수
 
     # 데이터 확인
     if lf is None:
         st.error("데이터를 로드할 수 없습니다.")
         return
 
+    # ==================== 사이드바 필터 추출 ====================
+    date_range = filters.get("date_range")  # (start, end) tuple
+    manufacturers = filters.get("manufacturers", [])
+    products = filters.get("products", [])
+    top_n = filters.get("top_n", Defaults.TOP_N)
+    min_cases = filters.get("min_cases", Defaults.MIN_CASES)
+
+    # 날짜 범위 → 년-월 리스트 변환
+    selected_dates = convert_date_range_to_months(date_range)
+
+    # ==================== 북마크 관리 ====================
+    render_bookmark_manager(filters)
+
+    # ==================== 필터 요약 배지 ====================
+    render_filter_summary_badge(date_range, manufacturers, products)
+
+    # ==================== 데이터 유효성 검사 ====================
+    if not selected_dates:
+        st.warning("⚠️ 분석할 기간을 선택해주세요 (사이드바에서 날짜 범위 설정)")
+        st.stop()
+
     try:
-        # 년-월 컬럼 생성 표현식을 한 번만 계산 (재사용)
+        # 년-월 컬럼 생성 표현식 (재사용)
         date_col = ColumnNames.DATE_RECEIVED
         year_month_expr = get_year_month_expr(lf, date_col)
 
-        # 사용 가능한 필터 옵션 가져오기
-        with st.spinner("필터 옵션 로딩 중..."):
-            available_dates, available_manufacturers, available_products = get_available_filters(
-                lf,
-                date_col=date_col,
-                _year_month_expr=year_month_expr
-            )
-
-        if len(available_dates) == 0:
-            st.warning("사용 가능한 날짜 데이터가 없습니다. 데이터 파일과 날짜 컬럼을 확인해주세요.")
-            st.stop()
-
-        # 필터 UI 렌더링 (사이드바 값 전달)
-        selected_dates, selected_manufacturers, selected_products = render_filter_ui(
-            available_dates,
-            available_manufacturers,
-            available_products,
+        # ==================== 스마트 인사이트 (새로 추가) ====================
+        render_smart_insights(
             lf,
             date_col,
+            selected_dates,
+            manufacturers,
+            products,
             year_month_expr,
-            selected_year_month,
-            sidebar_window
+            min_cases
         )
 
-        # 인사이트 요약 (필터 선택 후)
-        if selected_dates:
-            render_insights_summary(
-                lf,
-                date_col,
-                selected_dates,
-                selected_manufacturers,
-                selected_products,
-                sidebar_top_n,
-                year_month_expr
-            )
-
-        # 월별 보고서 수 그래프
+        # ==================== 월별 보고서 수 ====================
         render_monthly_reports_chart(
             lf,
             date_col,
             selected_dates,
-            selected_manufacturers,
-            selected_products,
-            sidebar_top_n,
+            manufacturers,
+            products,
+            top_n,
             year_month_expr
         )
 
-        # 제조사 - 모델별 결함 분석
+        # ==================== 제조사-모델별 결함 분석 ====================
         st.markdown("---")
         render_defect_analysis(
             lf,
             date_col,
             selected_dates,
-            selected_manufacturers,
-            selected_products,
+            manufacturers,
+            products,
             year_month_expr
         )
 
-        # 문제 부품 분석
+        # ==================== 문제 부품 분석 ====================
         st.markdown("---")
         render_component_analysis(
             lf,
             date_col,
             selected_dates,
-            selected_manufacturers,
-            selected_products,
-            year_month_expr
+            manufacturers,
+            products,
+            year_month_expr,
+            top_n
         )
 
-        # 기기별 치명률(CFR) 분석
+        # ==================== 기기별 치명률(CFR) 분석 ====================
         st.markdown("---")
         render_cfr_analysis(
             lf,
             date_col,
             selected_dates,
-            selected_manufacturers,
-            selected_products,
+            manufacturers,
+            products,
             year_month_expr,
-            sidebar_min_cases,
-            sidebar_top_n
+            min_cases,
+            top_n
         )
 
-        # defect type별 상위 문제 & 사건 유형별 분포
+        # ==================== defect type별 상위 문제 & 사건 유형별 분포 ====================
         st.markdown("---")
         render_cluster_and_event_analysis(
             lf,
             date_col,
             selected_dates,
-            selected_manufacturers,
-            selected_products,
+            manufacturers,
+            products,
             year_month_expr
         )
 
@@ -261,62 +309,92 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.exception(e)
 
 
-def render_insights_summary(
+def render_smart_insights(
     lf,
     date_col,
     selected_dates,
-    selected_manufacturers,
-    selected_products,
-    top_n,
-    year_month_expr
+    manufacturers,
+    products,
+    year_month_expr,
+    min_cases
 ):
-    """인사이트 요약 섹션 렌더링"""
-    st.markdown("### 💡 주요 발견사항")
+    """스마트 인사이트: 자동 이상 감지 및 주요 발견사항
+
+    Args:
+        lf: LazyFrame
+        date_col: 날짜 컬럼명
+        selected_dates: 현재 기간 (년-월 리스트)
+        manufacturers: 선택된 제조사 리스트
+        products: 선택된 제품 리스트
+        year_month_expr: 년-월 표현식
+        min_cases: 최소 케이스 수
+    """
+    st.markdown("### 💡 자동 발견 사항")
+
+    insights = []
 
     with st.spinner("인사이트 생성 중..."):
-        # 1. 월별 보고서 수 Top 1
-        top_product = get_filtered_products(
+        # ==================== 1. 상위 보고 제품 ====================
+        top_product_df = get_filtered_products(
             lf,
             date_col=date_col,
             selected_dates=selected_dates,
-            selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
-            selected_products=selected_products if selected_products else None,
+            selected_manufacturers=manufacturers if manufacturers else None,
+            selected_products=products if products else None,
             top_n=1,
             _year_month_expr=year_month_expr
         )
 
-        # 2. 가장 많은 결함 유형
+        if len(top_product_df) > 0:
+            top_mfr_product = top_product_df["manufacturer_product"][0]
+            top_count = top_product_df["total_count"][0]
+            insights.append({
+                "type": "info",
+                "text": f"📊 **{top_mfr_product}**의 보고 건수가 **{top_count:,}건**으로 가장 많습니다"
+            })
+
+        # ==================== 3. 고위험 CFR 기기 경고 ====================
+        cfr_df = calculate_cfr_by_device(
+            lf,
+            date_col=date_col,
+            selected_dates=selected_dates if selected_dates else None,
+            selected_manufacturers=manufacturers if manufacturers else None,
+            selected_products=products if products else None,
+            top_n=5,
+            min_cases=min_cases,
+            _year_month_expr=year_month_expr
+        )
+
+        if len(cfr_df) > 0:
+            high_cfr = cfr_df.filter(pl.col("cfr") > 5.0)
+            if len(high_cfr) > 0:
+                top_device = high_cfr[0, "manufacturer_product"]
+                top_cfr = high_cfr[0, "cfr"]
+                death_count = high_cfr[0, "death_count"]
+                insights.append({
+                    "type": "error",
+                    "text": f"⚠️ **{top_device}**의 치명률이 **{top_cfr:.2f}%**로 매우 높습니다 (사망 {death_count:,}건)"
+                })
+            else:
+                # CFR이 낮으면 긍정적 메시지
+                avg_cfr = cfr_df["cfr"].mean()
+                if avg_cfr < 1.0:
+                    insights.append({
+                        "type": "success",
+                        "text": f"✅ 평균 치명률이 **{avg_cfr:.2f}%**로 양호한 수준입니다"
+                    })
+
+        # ==================== 3. 가장 빈번한 결함 유형 ====================
         defect_stats = analyze_manufacturer_defects(
             lf,
             date_col=date_col,
             selected_dates=selected_dates,
-            selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
-            selected_products=selected_products if selected_products else None,
+            selected_manufacturers=manufacturers if manufacturers else None,
+            selected_products=products if products else None,
             _year_month_expr=year_month_expr
         )
-
-        # 3. CFR Top 3
-        cfr_top = calculate_cfr_by_device(
-            lf,
-            date_col=date_col,
-            selected_dates=selected_dates if selected_dates else None,
-            selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
-            selected_products=selected_products if selected_products else None,
-            top_n=3,
-            min_cases=10,
-            _year_month_expr=year_month_expr
-        )
-
-        # 인사이트 생성
-        insights = []
-
-        if len(top_product) > 0:
-            top_mfr_product = top_product["manufacturer_product"][0]
-            top_count = top_product["total_count"][0]
-            insights.append(f"**{top_mfr_product}**의 보고 건수가 **{top_count:,}건**으로 가장 많습니다")
 
         if len(defect_stats) > 0:
-            # 가장 많은 결함 유형 찾기
             top_defect = defect_stats.group_by(ColumnNames.DEFECT_TYPE).agg(
                 pl.col("count").sum().alias("total")
             ).sort("total", descending=True).head(1)
@@ -324,160 +402,28 @@ def render_insights_summary(
             if len(top_defect) > 0:
                 defect_type = top_defect[ColumnNames.DEFECT_TYPE][0]
                 defect_count = top_defect["total"][0]
-                insights.append(f"가장 빈번한 결함 유형은 **{defect_type}** ({defect_count:,}건)입니다")
+                insights.append({
+                    "type": "info",
+                    "text": f"🔧 가장 빈번한 결함 유형은 **{defect_type}** ({defect_count:,}건)입니다"
+                })
 
-        if len(cfr_top) > 0:
-            highest_cfr_product = cfr_top["manufacturer_product"][0]
-            highest_cfr = cfr_top["cfr"][0]
-            cfr_deaths = cfr_top["death_count"][0]
-
-            if highest_cfr > 5.0:  # CFR이 5% 이상이면 경고
-                insights.append(f"⚠️ **{highest_cfr_product}**의 치명률이 **{highest_cfr:.2f}%**로 매우 높습니다 (사망 {cfr_deaths:,}건)")
+    # ==================== 인사이트 표시 ====================
+    if insights:
+        for insight in insights:
+            if insight["type"] == "warning":
+                st.warning(insight["text"])
+            elif insight["type"] == "error":
+                st.error(insight["text"])
+            elif insight["type"] == "success":
+                st.success(insight["text"])
             else:
-                insights.append(f"**{highest_cfr_product}**의 치명률이 **{highest_cfr:.2f}%**로 가장 높습니다 (사망 {cfr_deaths:,}건)")
-
-        # 인사이트 표시
-        if insights:
-            for idx, insight in enumerate(insights, 1):
-                st.info(f"{idx}. {insight}")
-        else:
-            st.info("선택한 조건에서 인사이트를 생성할 수 없습니다.")
+                st.info(insight["text"])
+    else:
+        st.info("특이사항이 감지되지 않았습니다")
 
     st.markdown("---")
 
 
-def render_filter_ui(
-    available_dates,
-    available_manufacturers,
-    available_products,
-    lf,
-    date_col,
-    year_month_expr,
-    selected_year_month,
-    sidebar_window
-):
-    """필터 UI 렌더링 (간소화: 사이드바 통합)"""
-    st.markdown("### 🔍 데이터 필터")
-    st.caption("💡 사이드바에서 기준 월, 윈도우 크기, 상위 개수 등을 설정할 수 있습니다")
-
-    # ==================== 기간 선택 (사이드바 기반 자동 계산) ====================
-    with st.expander("📅 분석 기간", expanded=True):
-        prev_selected_dates = st.session_state.get('prev_selected_dates', [])
-
-        # 기본값 설정: 사이드바 기준 월 + 윈도우로 자동 계산
-        default_dates = []
-        if selected_year_month and selected_year_month in available_dates:
-            recent_months, base_months = get_window_dates(
-                available_dates,
-                sidebar_window,
-                selected_year_month
-            )
-            default_dates = list(set(recent_months + base_months))
-
-            # 이전 선택값이 있으면 유지
-            if prev_selected_dates:
-                valid_prev_dates = [d for d in prev_selected_dates if d in available_dates]
-                if valid_prev_dates:
-                    default_dates = valid_prev_dates
-        elif available_dates:
-            # 사이드바 값이 없으면 최근 데이터 기준
-            default_dates = [available_dates[0]]
-
-        selected_dates = st.multiselect(
-            "분석할 년-월 선택",
-            options=available_dates,
-            default=default_dates,
-            key='dates_multiselect',
-            help=f"사이드바 설정(기준월: {selected_year_month}, 윈도우: {sidebar_window}개월)을 기반으로 자동 선택되었습니다."
-        )
-
-        if selected_dates:
-            st.session_state.prev_selected_dates = selected_dates
-            ellipsis = '...' if len(selected_dates) > 3 else ''
-            st.info(f"✅ 선택된 기간: {len(selected_dates)}개월 ({', '.join(selected_dates[:3])}{ellipsis})")
-        elif 'prev_selected_dates' in st.session_state and not selected_dates:
-            del st.session_state.prev_selected_dates
-
-    # ==================== 제조사/제품군 선택 ====================
-    with st.expander("🏭 제조사 및 제품군 선택", expanded=True):
-        col1, col2 = st.columns(2)
-
-        # 제조사 선택
-        with col1:
-            if selected_dates:
-                filtered_manufacturers = get_manufacturers_by_dates(
-                    lf,
-                    selected_dates,
-                    date_col=date_col,
-                    _year_month_expr=year_month_expr
-                )
-                prev_selected = st.session_state.get('prev_selected_manufacturers', [])
-                valid_selected_manufacturers = [m for m in prev_selected if m in filtered_manufacturers]
-                manufacturer_options = filtered_manufacturers
-                default_manufacturers = valid_selected_manufacturers
-            else:
-                manufacturer_options = available_manufacturers
-                default_manufacturers = []
-                if 'prev_selected_manufacturers' in st.session_state:
-                    del st.session_state.prev_selected_manufacturers
-
-            selected_manufacturers = st.multiselect(
-                "제조사 선택 (선택 안 함 = 전체)",
-                options=manufacturer_options,
-                default=default_manufacturers,
-                help=f"선택된 년-월({len(selected_dates) if selected_dates else 0}개)에 존재하는 제조사만 표시됩니다",
-                key='manufacturers_multiselect'
-            )
-
-            if selected_manufacturers:
-                st.session_state.prev_selected_manufacturers = selected_manufacturers
-            else:
-                if 'prev_selected_manufacturers' in st.session_state:
-                    del st.session_state.prev_selected_manufacturers
-
-        # 제품군 선택
-        with col2:
-            if selected_manufacturers:
-                filtered_products = get_products_by_manufacturers(
-                    lf,
-                    selected_manufacturers,
-                    manufacturer_col=ColumnNames.MANUFACTURER,
-                    product_col=ColumnNames.PRODUCT_CODE
-                )
-                prev_selected = st.session_state.get('prev_selected_products', [])
-                valid_selected_products = [p for p in prev_selected if p in filtered_products]
-                product_options = filtered_products
-                default_products = valid_selected_products
-            else:
-                product_options = available_products
-                default_products = []
-                if 'prev_selected_products' in st.session_state:
-                    del st.session_state.prev_selected_products
-
-            selected_products = st.multiselect(
-                "제품군 선택 (선택 안 함 = 전체)",
-                options=product_options,
-                default=default_products,
-                help=f"선택된 제조사({len(selected_manufacturers) if selected_manufacturers else 0}개)의 제품군만 표시됩니다",
-                key='products_multiselect'
-            )
-
-            if selected_products:
-                st.session_state.prev_selected_products = selected_products
-            elif 'prev_selected_products' in st.session_state and not selected_products:
-                del st.session_state.prev_selected_products
-
-        # 필터 요약 표시
-        if selected_manufacturers or selected_products:
-            filter_summary = []
-            if selected_manufacturers:
-                filter_summary.append(f"제조사 {len(selected_manufacturers)}개")
-            if selected_products:
-                filter_summary.append(f"제품군 {len(selected_products)}개")
-            st.info(f"✅ 선택됨: {', '.join(filter_summary)}")
-
-    st.markdown("---")
-    return selected_dates, selected_manufacturers, selected_products
 
 
 def render_monthly_reports_chart(
@@ -1010,9 +956,20 @@ def render_component_analysis(
     selected_dates,
     selected_manufacturers,
     selected_products,
-    year_month_expr
+    year_month_expr,
+    top_n
 ):
-    """문제 부품 분석 렌더링"""
+    """문제 부품 분석 렌더링
+
+    Args:
+        lf: LazyFrame
+        date_col: 날짜 컬럼명
+        selected_dates: 선택된 년-월 리스트
+        selected_manufacturers: 선택된 제조사 리스트
+        selected_products: 선택된 제품 리스트
+        year_month_expr: 년-월 표현식
+        top_n: 상위 N개 표시 (사이드바에서 전달)
+    """
     st.subheader("🔩 문제 부품 분석")
 
     if not selected_dates:
@@ -1031,34 +988,20 @@ def render_component_analysis(
             )
 
         if len(available_defect_types) > 0:
-            col1, col2 = st.columns([2, 1])
+            # 결함 유형 선택 (세션 상태 유지)
+            prev_selected_defect_type = st.session_state.get('prev_selected_defect_type', None)
+            default_index = 0
+            if prev_selected_defect_type and prev_selected_defect_type in available_defect_types:
+                default_index = available_defect_types.index(prev_selected_defect_type)
 
-            with col1:
-                prev_selected_defect_type = st.session_state.get('prev_selected_defect_type', None)
-                default_index = 0
-                if prev_selected_defect_type and prev_selected_defect_type in available_defect_types:
-                    default_index = available_defect_types.index(prev_selected_defect_type)
-
-                selected_defect_type = st.selectbox(
-                    "결함 유형 선택",
-                    options=available_defect_types,
-                    index=default_index,
-                    help="분석할 결함 유형을 선택하세요",
-                    key='defect_type_selectbox'
-                )
-                st.session_state.prev_selected_defect_type = selected_defect_type
-
-            with col2:
-                default_top_n_components = st.session_state.get('top_n_components', Defaults.TOP_N)
-                top_n_components = st.number_input(
-                    "상위 N개 표시",
-                    min_value=1,
-                    max_value=50,
-                    value=default_top_n_components,
-                    step=1,
-                    key='top_n_components_input'
-                )
-                st.session_state.top_n_components = top_n_components
+            selected_defect_type = st.selectbox(
+                "결함 유형 선택",
+                options=available_defect_types,
+                index=default_index,
+                help=f"분석할 결함 유형을 선택하세요 (상위 {top_n}개 표시)",
+                key='defect_type_selectbox'
+            )
+            st.session_state.prev_selected_defect_type = selected_defect_type
 
             if selected_defect_type:
                 with st.spinner("문제 부품 분석 중..."):
@@ -1069,7 +1012,7 @@ def render_component_analysis(
                         selected_dates=selected_dates,
                         selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
                         selected_products=selected_products if selected_products else None,
-                        top_n=top_n_components,
+                        top_n=top_n,
                         _year_month_expr=year_month_expr
                     )
 

@@ -93,15 +93,16 @@ current_tab = tab_options[selected_tab_display]
 
 # ==================== 사이드바 ====================
 # 선택된 탭에 맞는 사이드바 렌더링
-# cluster 탭의 경우 동적 옵션 전달
+from dashboard.utils.sidebar_manager import SidebarManager
+from utils.constants import ColumnNames
+from utils.data_utils import get_year_month_expr
+
+# year_month 표현식 생성 (공통)
+year_month_expr = get_year_month_expr(maude_lf, ColumnNames.DATE_RECEIVED)
+
 if current_tab == "cluster":
     # cluster 탭: available_clusters를 미리 계산 (전체 데이터 기준)
     from utils.analysis_cluster import get_available_clusters
-    from utils.constants import ColumnNames
-    from utils.data_utils import get_year_month_expr
-
-    # year_month 표현식 생성
-    year_month_expr = get_year_month_expr(maude_lf, ColumnNames.DATE_RECEIVED)
 
     # available_clusters 계산 (전체 데이터 기준)
     available_clusters = get_available_clusters(
@@ -116,12 +117,38 @@ if current_tab == "cluster":
     )
 
     # 동적 옵션으로 사이드바 렌더링
-    from dashboard.utils.sidebar_manager import SidebarManager
     manager = SidebarManager(current_tab)
     dynamic_options = {
         "selected_cluster": available_clusters
     }
     filters = manager.render_sidebar(dynamic_options=dynamic_options)
+
+elif current_tab == "eda":
+    # eda 탭: manufacturers와 products를 동적으로 계산
+    from dashboard.utils.filter_helpers import get_available_filters
+
+    # 사용 가능한 제조사/제품 계산 (전체 데이터 기준)
+    _, available_manufacturers, available_products = get_available_filters(
+        maude_lf,
+        date_col=ColumnNames.DATE_RECEIVED,
+        _year_month_expr=year_month_expr
+    )
+
+    # 동적 옵션으로 사이드바 렌더링
+    # cascading_filter 메타데이터 전달: products는 manufacturers에 의존
+    manager = SidebarManager(current_tab)
+    dynamic_options = {
+        "manufacturers": available_manufacturers,
+        "products": available_products,
+        "_cascade_config": {
+            "products": {
+                "depends_on": "manufacturers",
+                "data_source": maude_lf  # 필터링에 사용할 데이터
+            }
+        }
+    }
+    filters = manager.render_sidebar(dynamic_options=dynamic_options)
+
 else:
     filters = create_sidebar(current_tab)
 

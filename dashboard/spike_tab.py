@@ -69,6 +69,63 @@ def show(filters=None, lf: pl.LazyFrame = None):
     spike_df = result_df.filter(pl.col("is_spike_ensemble") == True)
 
     # ========================================
+    # 💡 SECTION 0: 핵심 인사이트 (최상단 배치)
+    # ========================================
+    st.subheader("💡 핵심 발견사항")
+
+    if len(spike_df) > 0:
+        # 1️⃣ 가장 위험한 스파이크 (3개 방법 모두 동의)
+        critical_spikes = spike_df.filter(pl.col("n_methods") == 3).sort("ratio", descending=True)
+
+        if len(critical_spikes) > 0:
+            top_critical = critical_spikes.head(1)
+            keyword = top_critical["keyword"][0]
+            ratio = top_critical["ratio"][0]
+            c_recent = top_critical["C_recent"][0]
+            c_base = top_critical["C_base"][0]
+
+            st.error(f"""
+🚨 **최고 위험 스파이크**: **{keyword}**
+- 보고 건수: {c_base}건 → **{c_recent}건** ({ratio:.1f}배 급증)
+- 3가지 탐지 방법 모두 스파이크로 판정
+- ⚠️ **즉시 조사 권장** (FDA 보고서 검토, 원인 분석 필요)
+            """)
+
+        # 2️⃣ 새롭게 등장한 스파이크 (이전 기간엔 없었던 키워드)
+        new_spikes = spike_df.filter(pl.col("C_base") < 5)  # 기준 기간에 거의 없었던 키워드
+        if len(new_spikes) > 0:
+            new_count = len(new_spikes)
+            new_keywords = new_spikes.head(3)["keyword"].to_list()
+            st.warning(f"""
+⚡ **신규 등장 스파이크**: {new_count}개
+- 예시: {', '.join(new_keywords)}
+- 과거에 거의 보고되지 않았으나 최근 급증
+- 💡 신규 제품 출시 또는 새로운 문제 발생 가능성
+            """)
+
+        # 3️⃣ 패턴별 요약
+        severe_count = len(spike_df.filter(pl.col("pattern") == "severe"))
+        if severe_count > 0:
+            st.warning(f"""
+🔴 **Severe 패턴**: {severe_count}개
+- 높은 급증률 + 많은 보고 건수 조합
+- **우선순위 높음**: 상위 10개 키워드 개별 검토 필요
+            """)
+        else:
+            alert_count = len(spike_df.filter(pl.col("pattern") == "alert"))
+            if alert_count > 0:
+                st.info(f"""
+🟠 **Alert 패턴**: {alert_count}개
+- 중간 수준의 급증 또는 보고 건수
+- 모니터링 필요
+                """)
+    else:
+        st.success("✅ 현재 기간에 통계적으로 유의미한 스파이크가 탐지되지 않았습니다.")
+        st.info("💡 이는 좋은 신호입니다. 제품 품질이 안정적으로 유지되고 있습니다.")
+
+    st.divider()
+
+    # ========================================
     # 🚨 SECTION 1: 스파이크 탐지 요약 (Critical 정보)
     # ========================================
     st.subheader("🚨 스파이크 탐지 요약")
@@ -211,13 +268,47 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ========================================
     st.subheader("📋 전체 분석 결과")
 
-    # 테이블 필터
+    # 빠른 프리셋 버튼
+    st.markdown("**🔘 빠른 필터**")
+    col_preset1, col_preset2, col_preset3, col_preset4 = st.columns(4)
+
+    # 세션 상태 초기화
+    if 'table_pattern_filter' not in st.session_state:
+        st.session_state.table_pattern_filter = ["severe", "alert", "attention"]
+    if 'table_spike_only' not in st.session_state:
+        st.session_state.table_spike_only = False
+
+    with col_preset1:
+        if st.button("🔴 Critical만", use_container_width=True, help="Severe 패턴 + 스파이크만 표시"):
+            st.session_state.table_pattern_filter = ["severe"]
+            st.session_state.table_spike_only = True
+            st.rerun()
+
+    with col_preset2:
+        if st.button("⚠️ 주의 필요", use_container_width=True, help="Severe + Alert 패턴 전체"):
+            st.session_state.table_pattern_filter = ["severe", "alert"]
+            st.session_state.table_spike_only = False
+            st.rerun()
+
+    with col_preset3:
+        if st.button("📊 전체 스파이크", use_container_width=True, help="모든 패턴의 스파이크만"):
+            st.session_state.table_pattern_filter = ["severe", "alert", "attention", "general"]
+            st.session_state.table_spike_only = True
+            st.rerun()
+
+    with col_preset4:
+        if st.button("🔄 초기화", use_container_width=True, help="기본 설정으로 복원"):
+            st.session_state.table_pattern_filter = ["severe", "alert", "attention"]
+            st.session_state.table_spike_only = False
+            st.rerun()
+
+    # 테이블 필터 (세션 상태 연동)
     col_pattern, col_spike_only, col_topn = st.columns([3, 1, 1])
     with col_pattern:
         pattern_filter = st.multiselect(
             "📊 패턴 필터",
             options=["severe", "alert", "attention", "general"],
-            default=["severe", "alert", "attention"],
+            default=st.session_state.table_pattern_filter,
             format_func=lambda x: {
                 "severe": "🔴 Severe",
                 "alert": "🟠 Alert",
@@ -226,13 +317,18 @@ def show(filters=None, lf: pl.LazyFrame = None):
             }[x],
             key="pattern_filter_table"
         )
+        # 선택값을 세션 상태에 저장
+        st.session_state.table_pattern_filter = pattern_filter
 
     with col_spike_only:
         show_spike_only = st.checkbox(
             "⚠️ 스파이크만",
-            value=False,
-            help="앙상블 스파이크로 판정된 키워드만 표시"
+            value=st.session_state.table_spike_only,
+            help="앙상블 스파이크로 판정된 키워드만 표시",
+            key="spike_only_checkbox"
         )
+        # 선택값을 세션 상태에 저장
+        st.session_state.table_spike_only = show_spike_only
 
     with col_topn:
         top_n_table = st.number_input(
@@ -421,14 +517,6 @@ def create_spike_chart(
 
         # _get_window_months() 메서드로 구간 계산
         recent_months, baseline_months = dummy_agg._get_window_months(as_of_month, window)
-
-        # 디버깅 정보 출력
-        st.sidebar.markdown("---")
-        st.sidebar.markdown(f"**🔍 구간 디버깅 (Window={window})**")
-        st.sidebar.caption(f"기준월: {as_of_month}")
-        st.sidebar.caption(f"비교 구간: {recent_months}")
-        st.sidebar.caption(f"기준 구간: {baseline_months}")
-        st.sidebar.caption(f"전체 데이터 월: {all_months[:3]}...{all_months[-3:]}")
 
         # 실제 데이터에 있는 월만 필터링
         baseline_months_in_data = [m for m in baseline_months if m in all_months]

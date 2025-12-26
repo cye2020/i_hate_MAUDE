@@ -1,28 +1,37 @@
-# cluster_tab.py
+# cluster_tab.py (전면 개선 버전)
 import streamlit as st
 import polars as pl
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from dateutil.relativedelta import relativedelta
-from utils.analysis_cluster import cluster_check
+from utils.analysis_cluster import cluster_check, get_available_clusters
 from utils.constants import ColumnNames, Defaults, ChartStyles
 from utils.data_utils import get_year_month_expr
 
-def show(
-    filters=None,
-    lf: pl.LazyFrame = None
-):
-    st.title("🔍 Clustering Reports")
 
-    # 필터 값 사용 (sidebar에서 전달)
+def show(filters=None, lf: pl.LazyFrame = None):
+    """클러스터 분석 탭 메인 함수 (전면 개선)
+
+    Args:
+        filters: 사이드바 필터 값
+        lf: LazyFrame 데이터
+    """
+    st.title("🔍 Cluster Analysis")
+
+    # 데이터 확인
+    if lf is None:
+        st.error("데이터를 로드할 수 없습니다.")
+        return
+
+    # ==================== 사이드바 필터 추출 ====================
     date_range = filters.get("date_range", None)
 
     # date_range를 문자열 리스트로 변환
     selected_dates = []
     if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = date_range
-
-        # 시작일부터 종료일까지 월별 리스트 생성
         current = start_date
         while current <= end_date:
             selected_dates.append(current.strftime("%Y-%m"))
@@ -31,152 +40,234 @@ def show(
     # year_month 표현식 생성 (재사용)
     year_month_expr = get_year_month_expr(lf, ColumnNames.DATE_RECEIVED)
 
-    # 사이드바에서 선택된 값 가져오기
-    selected_cluster = filters.get("selected_cluster")
-    top_n = filters.get("top_n", Defaults.TOP_N)
+    # ==================== 사용 가능한 클러스터 목록 가져오기 ====================
+    with st.spinner("클러스터 목록 로딩 중..."):
+        available_clusters = get_available_clusters(
+            _lf=lf,
+            cluster_col=ColumnNames.CLUSTER,
+            date_col=ColumnNames.DATE_RECEIVED,
+            selected_dates=selected_dates if selected_dates else None,
+            selected_manufacturers=None,
+            selected_products=None,
+            exclude_minus_one=True,
+            _year_month_expr=year_month_expr
+        )
 
-    # 선택된 클러스터가 없으면 경고 표시
-    if selected_cluster is None:
-        st.warning("클러스터를 선택해주세요.")
+    if not available_clusters:
+        st.warning("선택한 기간에 해당하는 클러스터가 없습니다.")
         return
 
-    # 클러스터 분석 실행
-    cluster_data = cluster_check(
-        _lf=lf,
-        cluster_name=selected_cluster,
-        cluster_col=ColumnNames.CLUSTER,
-        component_col=ColumnNames.PROBLEM_COMPONENTS,
-        event_col=ColumnNames.PATIENT_HARM,
-        date_col=ColumnNames.DATE_RECEIVED,
-        selected_dates=selected_dates,
-        selected_manufacturers=None,
-        selected_products=None,
-        top_n=top_n,
-        _year_month_expr=year_month_expr
-    )
+    # ==================== 필터 요약 배지 ====================
+    if date_range and len(date_range) == 2:
+        start, end = date_range
+        st.markdown(f"**📅 분석 기간:** {start.strftime('%Y-%m')} ~ {end.strftime('%Y-%m')} ({len(selected_dates)}개월)")
+    else:
+        st.markdown("**📅 분석 기간:** 전체")
 
-    # 1. 전체 요약 메트릭
-    st.subheader(f"📊 클러스터: {selected_cluster}")
+    st.markdown("---")
+
+    # ==================== 탭 구조 ====================
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 개별 분석",
+        "⚖️ 클러스터 비교",
+        "🔍 전체 개요",
+        "💡 인사이트"
+    ])
+
+    # ==================== 탭 1: 개별 클러스터 상세 분석 ====================
+    with tab1:
+        render_individual_cluster_analysis(
+            lf,
+            available_clusters,
+            selected_dates,
+            year_month_expr
+        )
+
+    # ==================== 탭 2: 클러스터 간 비교 ====================
+    with tab2:
+        render_cluster_comparison(
+            lf,
+            available_clusters,
+            selected_dates,
+            year_month_expr
+        )
+
+    # ==================== 탭 3: 전체 클러스터 개요 ====================
+    with tab3:
+        render_cluster_overview(
+            lf,
+            available_clusters,
+            selected_dates,
+            year_month_expr
+        )
+
+    # ==================== 탭 4: 자동 인사이트 ====================
+    with tab4:
+        render_cluster_insights(
+            lf,
+            available_clusters,
+            selected_dates,
+            year_month_expr
+        )
+
+
+def render_individual_cluster_analysis(lf, available_clusters, selected_dates, year_month_expr):
+    """개별 클러스터 상세 분석"""
+    st.markdown("### 🔍 개별 클러스터 상세 분석")
+    st.caption("특정 클러스터의 환자 피해, 문제 부품, 시계열 추이를 분석합니다")
+
+    # 클러스터 선택 및 Top N 설정
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        selected_cluster = st.selectbox(
+            "클러스터 선택",
+            options=available_clusters,
+            index=0,
+            format_func=lambda x: f"Cluster {x}",
+            key="individual_cluster_selectbox"
+        )
+
+    with col2:
+        top_n = st.number_input(
+            "상위 부품 개수",
+            min_value=5,
+            max_value=50,
+            value=Defaults.TOP_N,
+            step=5,
+            key="individual_top_n"
+        )
+
+    st.markdown("---")
+
+    # 클러스터 분석 실행
+    with st.spinner(f"Cluster {selected_cluster} 분석 중..."):
+        cluster_data = cluster_check(
+            _lf=lf,
+            cluster_name=selected_cluster,
+            cluster_col=ColumnNames.CLUSTER,
+            component_col=ColumnNames.PROBLEM_COMPONENTS,
+            event_col=ColumnNames.PATIENT_HARM,
+            date_col=ColumnNames.DATE_RECEIVED,
+            selected_dates=selected_dates,
+            selected_manufacturers=None,
+            selected_products=None,
+            top_n=top_n,
+            _year_month_expr=year_month_expr
+        )
+
+    # ==================== 1. 전체 요약 메트릭 ====================
+    st.subheader(f"📊 Cluster {selected_cluster} 요약")
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("전체 케이스", f"{cluster_data['total_count']:,}")
     with col2:
-        st.metric("사망", f"{cluster_data['harm_summary']['total_deaths']:,}",
-                  delta=None, delta_color="inverse")
+        death_count = cluster_data['harm_summary']['total_deaths']
+        death_rate = (death_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
+        st.metric("사망", f"{death_count:,}",
+                  delta=f"{death_rate:.2f}%", delta_color="inverse")
     with col3:
-        st.metric("중증 부상", f"{cluster_data['harm_summary']['total_serious_injuries']:,}",
-                  delta=None, delta_color="inverse")
+        serious_count = cluster_data['harm_summary']['total_serious_injuries']
+        serious_rate = (serious_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
+        st.metric("중증 부상", f"{serious_count:,}",
+                  delta=f"{serious_rate:.2f}%", delta_color="inverse")
     with col4:
-        st.metric("경증 부상", f"{cluster_data['harm_summary']['total_minor_injuries']:,}",
-                  delta=None, delta_color="inverse")
+        minor_count = cluster_data['harm_summary']['total_minor_injuries']
+        minor_rate = (minor_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
+        st.metric("경증 부상", f"{minor_count:,}",
+                  delta=f"{minor_rate:.2f}%", delta_color="inverse")
 
     st.markdown("---")
 
-    # 2. 환자 피해 분포 (파이 차트)
-    st.subheader("🎯 환자 피해 분포")
+    # ==================== 2. 환자 피해 분포 + 상위 부품 (좌우 배치) ====================
+    col_left, col_right = st.columns([1, 1])
 
-    harm_summary = cluster_data['harm_summary']
+    with col_left:
+        st.markdown("#### 🎯 환자 피해 분포")
 
-    # 값이 0보다 큰 항목만 필터링
-    harm_data = [
-        ('Death', harm_summary['total_deaths'], ChartStyles.DANGER_COLOR),
-        ('Serious Injury', harm_summary['total_serious_injuries'], ChartStyles.WARNING_COLOR),
-        ('Minor Injury', harm_summary['total_minor_injuries'], '#ffd700'),
-        ('No Harm', harm_summary['total_no_injuries'], ChartStyles.SUCCESS_COLOR),
-        ('Unknown', harm_summary.get('total_unknown', 0), '#9CA3AF')  # 회색
-    ]
+        harm_summary = cluster_data['harm_summary']
 
-    # 값이 0보다 큰 항목만 선택
-    filtered_harm_data = [(label, value, color) for label, value, color in harm_data if value > 0]
-
-    if filtered_harm_data:
-        harm_labels = [item[0] for item in filtered_harm_data]
-        harm_values = [item[1] for item in filtered_harm_data]
-        harm_colors = [item[2] for item in filtered_harm_data]
-    else:
-        # 모든 값이 0인 경우 기본값 사용
-        harm_labels = ['Death', 'Serious Injury', 'Minor Injury', 'No Harm', 'Unknown']
-        harm_values = [
-            harm_summary['total_deaths'],
-            harm_summary['total_serious_injuries'],
-            harm_summary['total_minor_injuries'],
-            harm_summary['total_no_injuries'],
-            harm_summary.get('total_unknown', 0)
-        ]
-        harm_colors = [
-            ChartStyles.DANGER_COLOR,
-            ChartStyles.WARNING_COLOR,
-            '#ffd700',
-            ChartStyles.SUCCESS_COLOR,
-            '#9CA3AF'
+        # 값이 0보다 큰 항목만 필터링
+        harm_data = [
+            ('Death', harm_summary['total_deaths'], ChartStyles.DANGER_COLOR),
+            ('Serious Injury', harm_summary['total_serious_injuries'], ChartStyles.WARNING_COLOR),
+            ('Minor Injury', harm_summary['total_minor_injuries'], '#ffd700'),
+            ('No Harm', harm_summary['total_no_injuries'], ChartStyles.SUCCESS_COLOR),
+            ('Unknown', harm_summary.get('total_unknown', 0), '#9CA3AF')
         ]
 
-    fig_pie = go.Figure(data=[go.Pie(
-        labels=harm_labels,
-        values=harm_values,
-        hole=0.3,
-        marker=dict(colors=harm_colors)
-    )])
+        filtered_harm_data = [(label, value, color) for label, value, color in harm_data if value > 0]
 
-    fig_pie.update_layout(
-        height=400,
-        margin=dict(l=20, r=20, t=40, b=20),
-        title="환자 피해 분포"
-    )
+        if filtered_harm_data:
+            harm_labels = [item[0] for item in filtered_harm_data]
+            harm_values = [item[1] for item in filtered_harm_data]
+            harm_colors = [item[2] for item in filtered_harm_data]
 
-    st.plotly_chart(fig_pie, width='stretch')
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=harm_labels,
+                values=harm_values,
+                hole=0.4,
+                marker=dict(colors=harm_colors, line=dict(color='#FFFFFF', width=2)),
+                textinfo='label+percent',
+                texttemplate='%{label}<br>%{percent}',
+                hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
+            )])
 
-    st.markdown("---")
-
-    # 3. 상위 부품 분석 (막대 차트)
-    st.subheader(f"🔧 상위 {top_n}개 문제 부품")
-
-    top_components = cluster_data['top_components']
-
-    if len(top_components) > 0:
-        fig_bar = px.bar(
-            top_components,
-            x='count',
-            y=ColumnNames.PROBLEM_COMPONENTS,
-            orientation='h',
-            text='ratio',
-            title=f"상위 {top_n}개 문제 부품 (비율 %)",
-            labels={
-                'count': '발생 건수',
-                ColumnNames.PROBLEM_COMPONENTS: '부품명',
-                'ratio': '비율 (%)'
-            }
-        )
-
-        fig_bar.update_traces(
-            texttemplate='%{text}%',
-            textposition='outside',
-            marker_color=ChartStyles.PRIMARY_COLOR
-        )
-
-        fig_bar.update_layout(
-            height=max(400, len(top_components) * 30),
-            margin=dict(l=20, r=20, t=60, b=20),
-            yaxis={'categoryorder': 'total ascending'}
-        )
-
-        st.plotly_chart(fig_bar, width='stretch')
-
-        # 데이터 테이블 표시
-        with st.expander("📋 상세 데이터 보기"):
-            st.dataframe(
-                top_components,
-                width='stretch',
-                hide_index=True
+            fig_pie.update_layout(
+                height=400,
+                margin=dict(l=20, r=20, t=20, b=20),
+                showlegend=True,
+                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05)
             )
-    else:
-        st.info("해당 클러스터에는 부품 정보가 없습니다.")
+
+            st.plotly_chart(fig_pie, width='stretch', config={'displayModeBar': False})
+        else:
+            st.info("환자 피해 데이터가 없습니다.")
+
+    with col_right:
+        st.markdown(f"#### 🔧 상위 {top_n}개 문제 부품")
+
+        top_components = cluster_data['top_components']
+
+        if len(top_components) > 0:
+            fig_bar = go.Figure()
+
+            fig_bar.add_trace(go.Bar(
+                x=top_components['count'].to_list(),
+                y=top_components[ColumnNames.PROBLEM_COMPONENTS].to_list(),
+                orientation='h',
+                marker=dict(
+                    color=top_components['count'].to_list(),
+                    colorscale='Blues',
+                    showscale=False
+                ),
+                text=[f"{r:.1f}%" for r in top_components['ratio'].to_list()],
+                textposition='outside',
+                hovertemplate='<b>%{y}</b><br>건수: %{x:,}<br>비율: %{text}<extra></extra>'
+            ))
+
+            fig_bar.update_layout(
+                xaxis_title="발생 건수",
+                yaxis_title="",
+                height=max(400, len(top_components) * 35),
+                margin=dict(l=20, r=20, t=20, b=40),
+                yaxis={'categoryorder': 'total ascending'},
+                showlegend=False
+            )
+
+            st.plotly_chart(fig_bar, width='stretch', config={'displayModeBar': False})
+
+            # 상세 데이터
+            with st.expander("📋 상세 데이터"):
+                st.dataframe(top_components, width='stretch', hide_index=True)
+        else:
+            st.info("해당 클러스터에는 부품 정보가 없습니다.")
 
     st.markdown("---")
 
-    # 4. 시계열 분석 (라인 차트)
-    st.subheader("📈 시계열 분석")
+    # ==================== 3. 시계열 분석 ====================
+    st.markdown("#### 📈 월별 발생 추이")
 
     time_series = cluster_data['time_series']
 
@@ -185,12 +276,8 @@ def show(
             time_series,
             x='year_month',
             y='count',
-            title=f"클러스터 '{selected_cluster}' 월별 발생 추이",
-            labels={
-                'year_month': '년-월',
-                'count': '발생 건수'
-            },
-            markers=True
+            markers=True,
+            labels={'year_month': '년-월', 'count': '발생 건수'}
         )
 
         fig_line.update_traces(
@@ -201,20 +288,407 @@ def show(
 
         fig_line.update_layout(
             height=400,
-            margin=dict(l=20, r=20, t=60, b=80),
+            margin=dict(l=20, r=20, t=20, b=80),
             hovermode='x unified',
             xaxis_tickangle=-45
         )
 
-        st.plotly_chart(fig_line, width='stretch')
+        st.plotly_chart(fig_line, width='stretch', config={'displayModeBar': False})
 
         # 통계 요약
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("평균 월별 발생", f"{time_series['count'].mean():.1f}")
         with col2:
             st.metric("최대 월별 발생", f"{time_series['count'].max()}")
         with col3:
             st.metric("최소 월별 발생", f"{time_series['count'].min()}")
+        with col4:
+            std_dev = time_series['count'].std()
+            st.metric("표준편차", f"{std_dev:.1f}")
     else:
         st.info("시계열 데이터가 없습니다.")
+
+
+def render_cluster_comparison(lf, available_clusters, selected_dates, year_month_expr):
+    """클러스터 간 비교 분석"""
+    st.markdown("### ⚖️ 클러스터 간 비교")
+    st.caption("두 클러스터의 특성을 나란히 비교합니다")
+
+    if len(available_clusters) < 2:
+        st.warning("비교를 위해서는 최소 2개 이상의 클러스터가 필요합니다.")
+        return
+
+    # 클러스터 선택
+    col1, col2 = st.columns(2)
+
+    with col1:
+        cluster_a = st.selectbox(
+            "클러스터 A",
+            options=available_clusters,
+            index=0,
+            format_func=lambda x: f"Cluster {x}",
+            key="compare_cluster_a"
+        )
+
+    with col2:
+        cluster_b = st.selectbox(
+            "클러스터 B",
+            options=available_clusters,
+            index=min(1, len(available_clusters) - 1),
+            format_func=lambda x: f"Cluster {x}",
+            key="compare_cluster_b"
+        )
+
+    if cluster_a == cluster_b:
+        st.warning("⚠️ 서로 다른 클러스터를 선택해주세요")
+        return
+
+    top_n = st.slider("상위 부품 개수", 5, 20, 10, key="compare_top_n")
+
+    st.markdown("---")
+
+    # 두 클러스터 데이터 로드
+    with st.spinner("클러스터 비교 데이터 로딩 중..."):
+        data_a = cluster_check(
+            _lf=lf, cluster_name=cluster_a, cluster_col=ColumnNames.CLUSTER,
+            component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
+            date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
+            selected_manufacturers=None, selected_products=None,
+            top_n=top_n, _year_month_expr=year_month_expr
+        )
+
+        data_b = cluster_check(
+            _lf=lf, cluster_name=cluster_b, cluster_col=ColumnNames.CLUSTER,
+            component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
+            date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
+            selected_manufacturers=None, selected_products=None,
+            top_n=top_n, _year_month_expr=year_month_expr
+        )
+
+    # ==================== 1. 요약 비교 ====================
+    st.markdown("#### 📊 요약 비교")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(f"**Cluster {cluster_a}**")
+        st.metric("전체 케이스", f"{data_a['total_count']:,}")
+        st.metric("사망", f"{data_a['harm_summary']['total_deaths']:,}")
+        st.metric("중증 부상", f"{data_a['harm_summary']['total_serious_injuries']:,}")
+
+    with col2:
+        st.markdown(f"**Cluster {cluster_b}**")
+        st.metric("전체 케이스", f"{data_b['total_count']:,}")
+        st.metric("사망", f"{data_b['harm_summary']['total_deaths']:,}")
+        st.metric("중증 부상", f"{data_b['harm_summary']['total_serious_injuries']:,}")
+
+    st.markdown("---")
+
+    # ==================== 2. 환자 피해 비교 (나란히) ====================
+    st.markdown("#### 🎯 환자 피해 분포 비교")
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(f"Cluster {cluster_a}", f"Cluster {cluster_b}"),
+        specs=[[{"type": "pie"}, {"type": "pie"}]]
+    )
+
+    # Cluster A 파이 차트
+    harm_a = data_a['harm_summary']
+    labels_a = ['Death', 'Serious Injury', 'Minor Injury', 'No Harm']
+    values_a = [
+        harm_a['total_deaths'],
+        harm_a['total_serious_injuries'],
+        harm_a['total_minor_injuries'],
+        harm_a['total_no_injuries']
+    ]
+
+    fig.add_trace(go.Pie(
+        labels=labels_a,
+        values=values_a,
+        name=f"Cluster {cluster_a}",
+        marker=dict(colors=[ChartStyles.DANGER_COLOR, ChartStyles.WARNING_COLOR, '#ffd700', ChartStyles.SUCCESS_COLOR])
+    ), row=1, col=1)
+
+    # Cluster B 파이 차트
+    harm_b = data_b['harm_summary']
+    values_b = [
+        harm_b['total_deaths'],
+        harm_b['total_serious_injuries'],
+        harm_b['total_minor_injuries'],
+        harm_b['total_no_injuries']
+    ]
+
+    fig.add_trace(go.Pie(
+        labels=labels_a,
+        values=values_b,
+        name=f"Cluster {cluster_b}",
+        marker=dict(colors=[ChartStyles.DANGER_COLOR, ChartStyles.WARNING_COLOR, '#ffd700', ChartStyles.SUCCESS_COLOR])
+    ), row=1, col=2)
+
+    fig.update_layout(height=400, showlegend=True)
+    st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
+
+    st.markdown("---")
+
+    # ==================== 3. 상위 부품 비교 ====================
+    st.markdown("#### 🔧 상위 부품 비교")
+
+    components_a = data_a['top_components'].to_pandas()
+    components_b = data_b['top_components'].to_pandas()
+
+    if len(components_a) > 0 and len(components_b) > 0:
+        # 공통 부품 찾기
+        common_components = set(components_a[ColumnNames.PROBLEM_COMPONENTS]) & set(components_b[ColumnNames.PROBLEM_COMPONENTS])
+
+        if common_components:
+            st.info(f"🔍 **공통 부품**: {len(common_components)}개 발견 - {', '.join(list(common_components)[:5])}" +
+                   (f" 외 {len(common_components) - 5}개" if len(common_components) > 5 else ""))
+
+        # 나란히 비교
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(f"**Cluster {cluster_a} 상위 부품**")
+            st.dataframe(components_a.head(10), width='stretch', hide_index=True)
+
+        with col2:
+            st.markdown(f"**Cluster {cluster_b} 상위 부품**")
+            st.dataframe(components_b.head(10), width='stretch', hide_index=True)
+    else:
+        st.info("부품 데이터가 부족합니다.")
+
+
+def render_cluster_overview(lf, available_clusters, selected_dates, year_month_expr):
+    """전체 클러스터 개요"""
+    st.markdown("### 🌐 전체 클러스터 개요")
+    st.caption("모든 클러스터의 전체적인 분포와 특성을 한눈에 확인합니다")
+
+    # 모든 클러스터 데이터 수집
+    with st.spinner("전체 클러스터 데이터 로딩 중..."):
+        all_cluster_data = []
+
+        for cluster_id in available_clusters:
+            data = cluster_check(
+                _lf=lf, cluster_name=cluster_id, cluster_col=ColumnNames.CLUSTER,
+                component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
+                date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
+                selected_manufacturers=None, selected_products=None,
+                top_n=5, _year_month_expr=year_month_expr
+            )
+
+            all_cluster_data.append({
+                'cluster': cluster_id,
+                'total_count': data['total_count'],
+                'deaths': data['harm_summary']['total_deaths'],
+                'serious_injuries': data['harm_summary']['total_serious_injuries'],
+                'minor_injuries': data['harm_summary']['total_minor_injuries'],
+                'no_harm': data['harm_summary']['total_no_injuries']
+            })
+
+    overview_df = pd.DataFrame(all_cluster_data)
+    overview_df['death_rate'] = (overview_df['deaths'] / overview_df['total_count'] * 100).round(2)
+    overview_df['cluster_label'] = overview_df['cluster'].apply(lambda x: f"Cluster {x}")
+
+    # ==================== 1. 클러스터별 케이스 수 비교 ====================
+    st.markdown("#### 📊 클러스터별 케이스 분포")
+
+    fig_bar = px.bar(
+        overview_df,
+        x='cluster_label',
+        y='total_count',
+        text='total_count',
+        labels={'cluster_label': '클러스터', 'total_count': '케이스 수'},
+        color='total_count',
+        color_continuous_scale='Blues'
+    )
+
+    fig_bar.update_traces(texttemplate='%{text:,}', textposition='outside')
+    fig_bar.update_layout(height=400, showlegend=False)
+
+    st.plotly_chart(fig_bar, width='stretch', config={'displayModeBar': False})
+
+    st.markdown("---")
+
+    # ==================== 2. 클러스터별 환자 피해 분포 (적층 바) ====================
+    st.markdown("#### 🎯 클러스터별 환자 피해 분포")
+
+    fig_stacked = go.Figure()
+
+    fig_stacked.add_trace(go.Bar(
+        name='Death',
+        x=overview_df['cluster_label'],
+        y=overview_df['deaths'],
+        marker_color=ChartStyles.DANGER_COLOR
+    ))
+
+    fig_stacked.add_trace(go.Bar(
+        name='Serious Injury',
+        x=overview_df['cluster_label'],
+        y=overview_df['serious_injuries'],
+        marker_color=ChartStyles.WARNING_COLOR
+    ))
+
+    fig_stacked.add_trace(go.Bar(
+        name='Minor Injury',
+        x=overview_df['cluster_label'],
+        y=overview_df['minor_injuries'],
+        marker_color='#ffd700'
+    ))
+
+    fig_stacked.add_trace(go.Bar(
+        name='No Harm',
+        x=overview_df['cluster_label'],
+        y=overview_df['no_harm'],
+        marker_color=ChartStyles.SUCCESS_COLOR
+    ))
+
+    fig_stacked.update_layout(
+        barmode='stack',
+        xaxis_title="클러스터",
+        yaxis_title="케이스 수",
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    st.plotly_chart(fig_stacked, width='stretch', config={'displayModeBar': False})
+
+    st.markdown("---")
+
+    # ==================== 3. 클러스터별 사망률 ====================
+    st.markdown("#### 💀 클러스터별 사망률")
+
+    fig_death_rate = px.scatter(
+        overview_df,
+        x='cluster_label',
+        y='death_rate',
+        size='total_count',
+        color='death_rate',
+        color_continuous_scale='Reds',
+        labels={'cluster_label': '클러스터', 'death_rate': '사망률 (%)'},
+        hover_data={'total_count': ':,', 'deaths': True}
+    )
+
+    fig_death_rate.update_layout(height=400)
+    st.plotly_chart(fig_death_rate, width='stretch', config={'displayModeBar': False})
+
+    # 요약 테이블
+    with st.expander("📋 전체 클러스터 요약 테이블"):
+        display_df = overview_df[[
+            'cluster_label', 'total_count', 'deaths',
+            'serious_injuries', 'minor_injuries', 'no_harm', 'death_rate'
+        ]].rename(columns={
+            'cluster_label': '클러스터',
+            'total_count': '전체 케이스',
+            'deaths': '사망',
+            'serious_injuries': '중증 부상',
+            'minor_injuries': '경증 부상',
+            'no_harm': '부상 없음',
+            'death_rate': '사망률 (%)'
+        })
+
+        st.dataframe(display_df, width='stretch', hide_index=True)
+
+
+def render_cluster_insights(lf, available_clusters, selected_dates, year_month_expr):
+    """자동 인사이트 생성"""
+    st.markdown("### 💡 자동 발견 인사이트")
+    st.caption("데이터 기반으로 자동 생성된 주요 발견 사항입니다")
+
+    insights = []
+
+    with st.spinner("인사이트 생성 중..."):
+        # 모든 클러스터 데이터 수집
+        all_data = []
+        for cluster_id in available_clusters:
+            data = cluster_check(
+                _lf=lf, cluster_name=cluster_id, cluster_col=ColumnNames.CLUSTER,
+                component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
+                date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
+                selected_manufacturers=None, selected_products=None,
+                top_n=10, _year_month_expr=year_month_expr
+            )
+            all_data.append((cluster_id, data))
+
+        # 1. 가장 큰 클러스터
+        largest_cluster = max(all_data, key=lambda x: x[1]['total_count'])
+        insights.append({
+            "type": "info",
+            "text": f"📊 **Cluster {largest_cluster[0]}**가 가장 많은 케이스를 포함합니다 ({largest_cluster[1]['total_count']:,}건)"
+        })
+
+        # 2. 가장 위험한 클러스터 (사망률 기준)
+        death_rates = [(c_id, data['harm_summary']['total_deaths'] / data['total_count'] * 100 if data['total_count'] > 0 else 0, data['harm_summary']['total_deaths'])
+                       for c_id, data in all_data]
+        highest_death_rate = max(death_rates, key=lambda x: x[1])
+
+        if highest_death_rate[1] > 0:
+            insights.append({
+                "type": "error",
+                "text": f"⚠️ **Cluster {highest_death_rate[0]}**의 사망률이 **{highest_death_rate[1]:.2f}%**로 가장 높습니다 (사망 {highest_death_rate[2]:,}건)"
+            })
+
+        # 3. 가장 안전한 클러스터
+        lowest_death_rate = min(death_rates, key=lambda x: x[1])
+        insights.append({
+            "type": "success",
+            "text": f"✅ **Cluster {lowest_death_rate[0]}**의 사망률이 **{lowest_death_rate[1]:.2f}%**로 가장 낮습니다"
+        })
+
+        # 4. 공통 문제 부품
+        all_components = []
+        for c_id, data in all_data:
+            if len(data['top_components']) > 0:
+                top_3 = data['top_components'].head(3)[ColumnNames.PROBLEM_COMPONENTS].to_list()
+                all_components.extend(top_3)
+
+        if all_components:
+            from collections import Counter
+            most_common = Counter(all_components).most_common(3)
+            common_parts = ", ".join([f"{part} ({count}개 클러스터)" for part, count in most_common if count > 1])
+
+            if common_parts:
+                insights.append({
+                    "type": "warning",
+                    "text": f"🔧 **여러 클러스터에서 공통으로 발견된 문제 부품**: {common_parts}"
+                })
+
+    # 인사이트 표시
+    if insights:
+        for insight in insights:
+            if insight["type"] == "warning":
+                st.warning(insight["text"])
+            elif insight["type"] == "error":
+                st.error(insight["text"])
+            elif insight["type"] == "success":
+                st.success(insight["text"])
+            else:
+                st.info(insight["text"])
+    else:
+        st.info("특이사항이 감지되지 않았습니다")
+
+    st.markdown("---")
+
+    # 권장 사항
+    st.markdown("### 🎯 권장 사항")
+
+    recommendations = []
+
+    # 사망률 높은 클러스터에 대한 권장
+    if highest_death_rate[1] > 5.0:
+        recommendations.append(f"- **Cluster {highest_death_rate[0]}**에 대한 집중 조사 및 안전성 개선이 필요합니다")
+
+    # 케이스 수 많은 클러스터
+    if largest_cluster[1]['total_count'] > 100:
+        recommendations.append(f"- **Cluster {largest_cluster[0]}**의 대량 케이스에 대한 패턴 분석을 수행하세요")
+
+    # 공통 부품
+    if all_components:
+        recommendations.append(f"- 여러 클러스터에서 반복되는 문제 부품에 대한 근본 원인 분석이 필요합니다")
+
+    if recommendations:
+        for rec in recommendations:
+            st.markdown(rec)
+    else:
+        st.markdown("- 현재 데이터에서 특별한 조치가 필요한 항목은 없습니다")

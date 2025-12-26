@@ -193,6 +193,39 @@ class SidebarManager:
             options = args.get("options", [])
             default = args.get("default", [])
 
+            # Cascading filter 지원: products가 manufacturers에 의존
+            if key == "products" and dynamic_options:
+                cascade_config = dynamic_options.get("_cascade_config", {}).get("products", {})
+                depends_on_key = cascade_config.get("depends_on")
+
+                if depends_on_key:
+                    # 의존하는 필터의 widget_key 구성 (prefix 포함)
+                    if is_common:
+                        parent_widget_key = f"common_{depends_on_key}"
+                    else:
+                        parent_widget_key = f"{self.dashboard_type}_{depends_on_key}"
+
+                    # 의존하는 필터 값 가져오기
+                    parent_value = st.session_state.get(parent_widget_key, [])
+
+                    if parent_value and len(parent_value) > 0:
+                        # 제조사 선택됨 → 해당 제조사의 제품만 필터링
+                        from dashboard.utils.filter_helpers import get_products_by_manufacturers
+                        from utils.constants import ColumnNames
+
+                        data_source = cascade_config.get("data_source")
+                        if data_source is not None:
+                            options = get_products_by_manufacturers(
+                                data_source,
+                                parent_value,
+                                manufacturer_col=ColumnNames.MANUFACTURER,
+                                product_col=ColumnNames.PRODUCT_CODE
+                            )
+
+                            # 기존 선택값 중 유효한 것만 유지
+                            prev_selected = st.session_state.get(f"prev_{widget_key}", [])
+                            default = [p for p in prev_selected if p in options]
+
             selected_value = st.multiselect(
                 label=label,
                 options=options,
@@ -200,6 +233,9 @@ class SidebarManager:
                 key=widget_key,
                 label_visibility="collapsed"
             )
+
+            # 선택값 저장 (다음 렌더링에서 참조)
+            st.session_state[f"prev_{widget_key}"] = selected_value
 
         elif widget_type == "slider":
             min_value = args.get("min_value", 0.0)
