@@ -14,6 +14,8 @@ class DashboardConfig:
         
         # 대시보드 설정들 (캐싱됨)
         self._sidebar = load_config("dashboard/sidebar")
+        
+        self._defaults = load_config("dashboard/defaults")
     
     # ==================== 기본 설정 ====================
     
@@ -36,8 +38,13 @@ class DashboardConfig:
     
     @property
     def sidebar(self) -> Dict[Any, Any]:
-        """클린징 설정"""
+        """사이드바 설정"""
         return self._sidebar
+    
+    @property
+    def defaults(self) -> Dict[Any, Any]:
+        """기본 설정"""
+        return self._defaults
     
     # ==================== 편의 메서드 ====================
     

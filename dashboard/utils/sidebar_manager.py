@@ -1,7 +1,9 @@
 # filter_manager.py
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 import streamlit as st
+from streamlit_datetime_picker import date_time_picker
+from dateutil.relativedelta import relativedelta
 
 import sys
 from pathlib import Path
@@ -217,15 +219,101 @@ class SidebarManager:
             max_value = args.get("max_value", 100)
             value = args.get("value", 50)
             step = args.get("step", 1)
+            format_str = args.get("format", None)
 
-            selected_value = st.number_input(
-                label=label,
-                min_value=min_value,
-                max_value=max_value,
-                value=value,
-                step=step,
+            number_input_kwargs = {
+                "label": label,
+                "min_value": min_value,
+                "max_value": max_value,
+                "value": value,
+                "step": step,
+                "key": widget_key,
+                "label_visibility": "collapsed"
+            }
+
+            if format_str:
+                number_input_kwargs["format"] = format_str
+
+            selected_value = st.number_input(**number_input_kwargs)
+
+        elif widget_type == "month_range_picker":
+            # 슬라이더를 사용한 년월 범위 선택
+
+            # 3년 전 계산 (defaults.yaml에서 설정된 기간 사용)
+            analysis_period_years = self.cfg.defaults.get("analysis_period_years", 3)
+            min_dt = (self.TODAY - relativedelta(years=analysis_period_years-1)).replace(day=1)
+            max_dt = self.TODAY.replace(day=1)
+            default_start_dt = (self.TODAY - relativedelta(years=1)).replace(day=1)
+
+            # 시간 정보 제거 (date만 사용) - slider는 date 객체에서 더 잘 작동
+            from datetime import date
+            min_date = date(min_dt.year, min_dt.month, 1)
+            max_date = date(max_dt.year, max_dt.month, 1) - relativedelta(months=1)
+            default_start = date(default_start_dt.year, default_start_dt.month, 1) - relativedelta(months=1)
+
+            # 슬라이더로 범위 선택
+            selected_range = st.slider(
+                label="분석 기간 (년-월)",
+                min_value=min_date,
+                max_value=max_date,
+                value=(default_start, max_date),
                 key=widget_key,
-                label_visibility="collapsed"
+                format="YYYY-MM"
+            )
+
+            # datetime 객체로 변환 (매월 1일, 시간은 00:00:00)
+            if isinstance(selected_range, tuple) and len(selected_range) == 2:
+                start_date = datetime.combine(selected_range[0], datetime.min.time())
+                end_date = datetime.combine(selected_range[1], datetime.min.time())
+            else:
+                start_date = datetime.combine(default_start, datetime.min.time())
+                end_date = datetime.combine(max_date, datetime.min.time())
+
+            # 선택된 기간 표시
+            st.caption(f"📅 {start_date.strftime('%Y-%m')} ~ {end_date.strftime('%Y-%m')}")
+
+            selected_value = (start_date, end_date)
+
+            # 계산된 날짜를 세션 스테이트에 명시적으로 저장 (overview_tab에서 사용)
+            st.session_state[f"{widget_key}_start_computed"] = start_date
+            st.session_state[f"{widget_key}_end_computed"] = end_date
+
+            self.start_date = start_date
+            self.end_date = end_date
+
+        elif widget_type == "date_time_picker":
+            # streamlit-datetime-picker를 사용한 단일 날짜 선택기
+
+            picker = args.get("picker", "datetime")
+            value = args.get("value")
+            minDate = args.get("minDate")
+            maxDate = args.get("maxDate")
+            allowClear = args.get("allowClear", True)
+            size = args.get("size", "middle")
+
+            # 기본값 설정
+            if value is None:
+                value = self.TODAY
+
+            # 3년 전 계산 (defaults.yaml에서 설정된 기간 사용)
+            analysis_period_years = self.cfg.defaults.get("analysis_period_years", 3)
+            
+            if minDate is None:
+                minDate = self.TODAY - relativedelta(years=analysis_period_years - 1)
+
+            if maxDate is None:
+                maxDate = self.TODAY
+                
+
+            selected_value = date_time_picker(
+                label=label,
+                picker=picker,
+                value=value,
+                minDate=minDate,
+                maxDate=maxDate,
+                allowClear=allowClear,
+                size=size,
+                key=widget_key
             )
 
         # Caption 렌더링 (있는 경우)

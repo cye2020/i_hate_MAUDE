@@ -452,7 +452,7 @@ class BaselineAggregator:
         
         baseline_concat = pl.concat([baseline_1m, baseline_3m]).sort(["keyword", "window"])
         
-        baseline_final = spike_pattern_output(baseline_concat)
+        baseline_final = self.spike_pattern_output(baseline_concat)
         
         if verbose:
             print("\n베이스라인 테이블 생성 완료")

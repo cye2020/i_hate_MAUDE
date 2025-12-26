@@ -1,11 +1,8 @@
 # overview_tab.py
-import pandas as pd
 import polars as pl
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from utils.filter_manager import create_sidebar
+from utils.analysis import calculate_big_numbers
 
 # overview_tab.py
 def show(filters=None, lf: pl.LazyFrame = None):
@@ -14,16 +11,24 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # 필터에서 segment 값 가져오기 (None이면 전체)
     segment = filters.get("segment", None)
 
+    # 날짜 범위 가져오기 (month_range_picker에서)
+    date_range = filters.get("date_range", None)
+    start_date = None
+    end_date = None
+
+    if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date, end_date = date_range
+
     # 세션 스테이트 초기화 (브러시 선택된 날짜 범위 저장)
     if 'selected_date_range' not in st.session_state:
         st.session_state.selected_date_range = None
 
-    # Big Number 표시 (4개)
+    # Big Number 표시 (4개) - 선택된 기간의 최신 한 달 vs 전월 비교
     big_numbers = calculate_big_numbers(
-        lf,
-        start=st.session_state.selected_date_range[0] if st.session_state.selected_date_range else None,
-        end=st.session_state.selected_date_range[1] if st.session_state.selected_date_range else None,
-        segment=segment
+        _data=lf,
+        segment=segment,
+        start_date=start_date,
+        end_date=end_date
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -31,88 +36,42 @@ def show(filters=None, lf: pl.LazyFrame = None):
     with col1:
         st.metric(
             label="📁 총 보고서 수",
-            value=f"{big_numbers['total_reports']:,}건"
-        )
-
-    with col2:
-        st.metric(
-            label="⚠️ 중대 피해 발생률",
-            value=f"{big_numbers['severe_harm_rate']:.1f}%"
+            value=f"{big_numbers['total_reports']:,}건",
+            delta=f"{big_numbers['total_reports_delta']:+.1f}%" if big_numbers['total_reports_delta'] is not None else None
         )
 
     with col3:
         st.metric(
-            label="🔧 제조사 결함 확인률",
-            value=f"{big_numbers['defect_confirmed_rate']:.1f}%"
+            label="⚠️ 중대 피해 발생률",
+            value=f"{big_numbers['severe_harm_rate']:.1f}%",
+            delta=f"{big_numbers['severe_harm_rate_delta']:+.1f}%p" if big_numbers['severe_harm_rate_delta'] is not None else None
         )
 
     with col4:
         st.metric(
-            label="⏱️ 평균 처리 기간",
-            value=f"{big_numbers['avg_processing_days']:.0f}일"
+            label="🔧 제조사 결함 확정률",
+            value=f"{big_numbers['defect_confirmed_rate']:.1f}%",
+            delta=f"{big_numbers['defect_confirmed_rate_delta']:+.1f}%p" if big_numbers['defect_confirmed_rate_delta'] is not None else None
+        )
+
+    with col2:
+        # delta에 이전 기간의 가장 치명적인 defect type 표시
+        prev_defect_info = f"이전: {big_numbers['prev_most_critical_defect_type']} ({big_numbers['prev_most_critical_defect_rate']:.1f}%)"
+        st.metric(
+            label="🔥 가장 치명적인 Defect Type",
+            value=big_numbers['most_critical_defect_type'],
+            delta=prev_defect_info,
+            delta_arrow='off',
+            delta_color="off"  # delta를 회색으로 표시 (증감이 아니라 정보)
         )
 
     st.markdown("---")
 
-    # 차트 그리기
-    plot_stacked_area_chart(lf, segment=segment)
+    # 차트 그리기 (날짜 범위 적용)
+    start_str = start_date.strftime("%Y-%m-%d") if start_date else None
+    end_str = end_date.strftime("%Y-%m-%d") if end_date else None
+    plot_stacked_area_chart(lf, start=start_str, end=end_str, segment=segment)
 
-def calculate_big_numbers(
-    data: pl.LazyFrame,
-    start: str = None,
-    end: str = None,
-    segment: str = None,
-) -> dict:
-    """Big Number 4개 계산
-
-    Args:
-        data: LazyFrame 데이터
-        start: 시작 날짜 (브러시 선택 시)
-        end: 종료 날짜 (브러시 선택 시)
-        segment: 세그먼트 컬럼명 (현재는 사용 안함, 차트만 segment 적용)
-
-    Returns:
-        {
-            'total_reports': 총 보고서 수,
-            'severe_harm_rate': 중대 피해 발생률 (%),
-            'defect_confirmed_rate': 제조사 결함 확인률 (%),
-            'avg_processing_days': 평균 처리 기간 (일)
-        }
-    """
-    # 날짜 필터링
-    filtered_data = data
-    if start and end:
-        filtered_data = filtered_data.filter(
-            (pl.col("date_received") >= start) & (pl.col("date_received") <= end)
-        )
-
-    # 집계
-    df = filtered_data.select([
-        pl.len().alias("total"),
-        # 중대 피해 (Serious Injury + Death)
-        pl.when(pl.col("patient_harm").is_in(["Serious Injury", "Death"]))
-          .then(1).otherwise(0).sum().alias("severe_harm_count"),
-        # 결함 확인
-        pl.when(pl.col("defect_confirmed") == True)
-          .then(1).otherwise(0).sum().alias("defect_confirmed_count"),
-        # 평균 처리 기간 (date_received - date_occurred)
-        (pl.col("date_received") - pl.col("date_occurred"))
-          .dt.total_days()
-          .mean()
-          .alias("avg_processing_days"),
-    ]).collect()
-
-    total = df["total"][0]
-    severe_harm = df["severe_harm_count"][0]
-    defect_confirmed = df["defect_confirmed_count"][0]
-    avg_days = df["avg_processing_days"][0] if df["avg_processing_days"][0] is not None else 0.0
-
-    return {
-        "total_reports": total,
-        "severe_harm_rate": (severe_harm / total * 100) if total > 0 else 0.0,
-        "defect_confirmed_rate": (defect_confirmed / total * 100) if total > 0 else 0.0,
-        "avg_processing_days": avg_days,
-    }
 
 # 브러시 차트
 def plot_stacked_area_chart(
@@ -135,9 +94,13 @@ def plot_stacked_area_chart(
     # 1. 날짜 필터링
     filtered_data = data
     if start and end:
-        # date_received 컬럼이 있다고 가정
+        # 문자열을 datetime으로 변환하여 비교
+        from datetime import datetime
+        start_dt = datetime.strptime(start, "%Y-%m-%d") if isinstance(start, str) else start
+        end_dt = datetime.strptime(end, "%Y-%m-%d") if isinstance(end, str) else end
+
         filtered_data = filtered_data.filter(
-            (pl.col("date_received") >= start) & (pl.col("date_received") <= end)
+            (pl.col("date_received") >= start_dt) & (pl.col("date_received") <= end_dt)
         )
 
     # 2. 집계 수준에 따라 count
@@ -236,14 +199,14 @@ def plot_stacked_area_chart(
     # rangeslider 선택 이벤트 캡처
     event = st.plotly_chart(fig, width='stretch', on_select='rerun', key='overview_chart')
 
-    # 디버그: 선택된 범위 출력
-    st.write("### 디버그: Plotly Event")
-    st.write("event:", event)
+    # # 디버그: 선택된 범위 출력
+    # st.write("### 디버그: Plotly Event")
+    # st.write("event:", event)
 
-    if event and 'selection' in event:
-        st.write("selection:", event['selection'])
+    # if event and 'selection' in event:
+    #     st.write("selection:", event['selection'])
 
-    if event and 'range' in event:
-        st.write("range:", event['range'])
+    # if event and 'range' in event:
+    #     st.write("range:", event['range'])
 
     return agg_data

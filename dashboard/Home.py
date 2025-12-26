@@ -9,9 +9,10 @@ from dateutil.relativedelta import relativedelta
 from millify import millify
 import polars as pl
 import overview_tab as o_tab
-import eda_tab as e_tab
+import eda_tab_2 as e_tab
 import cluster_tab as c_tab
-from utils.filter_manager import create_sidebar
+import spike_tab as s_tab
+from dashboard.utils.sidebar_manager import create_sidebar
 from utils.dashboard_config import get_config
 
 
@@ -68,7 +69,7 @@ maude_lf = st.session_state.data
 # 탭 옵션 정의
 tab_options = {
     "📊 Overview": "overview",
-    "📈 Detailed Analysis": "eda",
+    "📈 Spike Detection": "spike",
     "🔍 Clustering Reports": "cluster"
 }
 
@@ -98,31 +99,11 @@ filters = create_sidebar(current_tab)
 # 선택된 탭의 콘텐츠 표시
 if current_tab == "overview":
     o_tab.show(filters, maude_lf)
-elif current_tab == "eda":
-    e_tab.show(filters)
+    e_tab.show(filters, maude_lf)
+elif current_tab == 'spike':
+    s_tab.show(filters, maude_lf)
 elif current_tab == "cluster":
-    c_tab.show(filters)
-
-
-# ==================== 시스템 상태 ====================
-st.subheader("🖥️ 시스템 상태")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("**데이터 파이프라인**")
-    st.progress(0.95)
-    st.caption("95% - 정상 작동 중")
-
-with col2:
-    st.markdown("**모델 서빙**")
-    st.progress(1.0)
-    st.caption("100% - 정상")
-
-with col3:
-    st.markdown("**데이터베이스**")
-    st.progress(0.87)
-    st.caption("87% - 여유 공간")
+    c_tab.show(filters, maude_lf)
 
 # ==================== 푸터 ====================
 st.markdown("---")

@@ -8,35 +8,39 @@ common:
       environment: "Development"
 
   date_selector:
-    enabled: false  # overview는 날짜 필터 사용 안함
-    year_range: [-2, 0]  # 현재 년도 기준 범위
-    default_year_index: 2
-    default_month: 1
+    enabled: false  # 공통 날짜 선택기 비활성화
 
   # 공통 필터 (모든 탭에서 사용)
-  filters:
-    - type: "selectbox"
-      key: "segment"
-      label: "분석 기준"
-      args:
-        options:
-          - label: "전체"
-            value: null
-          - label: "제조사"
-            value: "manufacturer_name"
-          - label: "제품군"
-            value: "product_code"
-          - label: "기기"
-            value: "udi_di"
-          - label: "클러스터"
-            value: "cluster"
-          - label: "결함 유형"
-            value: "defect_type"
-        index: 0
+  filters: []  # 공통 필터 모두 비활성화
 
 dashboards:
   overview:
-    filters: []  # overview는 별도 필터 없음 (segment만 사용)
+    filters:
+      - type: "month_range_picker"
+        key: "date_range"
+        label: "📅 분석 기간"
+        args:
+          default_start: "2023-01"
+          default_end: "2025-12"
+          
+      - type: "selectbox"
+        key: "segment"
+        label: "분석 기준"
+        args:
+          options:
+            - label: "전체"
+              value: null
+            - label: "제조사"
+              value: "manufacturer_name"
+            - label: "제품군"
+              value: "product_code"
+            - label: "기기"
+              value: "udi_di"
+            - label: "클러스터"
+              value: "cluster"
+            - label: "결함 유형"
+              value: "defect_type"
+          index: 0
 
   eda:
     filters:
@@ -76,3 +80,81 @@ dashboards:
           value: 12
           step: 1
         caption: "{value}개월"
+
+  spike:
+    filters:
+      - type: "date_selector"
+        key: "as_of_month"
+        label: "📅 기준 월"
+        args:
+          default_month: "2025-11"
+        caption: "분석 기준: {value}"
+
+      - type: "selectbox"
+        key: "window"
+        label: "📊 윈도우"
+        args:
+          options:
+            - label: "1개월"
+              value: 1
+            - label: "3개월"
+              value: 3
+          index: 0
+
+      - type: "number_input"
+        key: "min_c_recent"
+        label: "📈 최소 최근 케이스 수"
+        args:
+          min_value: 0
+          max_value: 1000
+          value: 20
+          step: 1
+        caption: "{value}건 이상"
+
+      - type: "number_input"
+        key: "z_threshold"
+        label: "📉 Z-score 임계값"
+        args:
+          min_value: 0.0
+          max_value: 10.0
+          value: 2.0
+          step: 0.1
+          format: "%.1f"
+        caption: "Z ≥ {value}"
+
+      - type: "number_input"
+        key: "eps"
+        label: "🔢 Epsilon (eps)"
+        args:
+          min_value: 0.01
+          max_value: 10.0
+          value: 0.1
+          step: 0.1
+          format: "%.2f"
+        caption: "eps = {value}"
+
+      - type: "selectbox"
+        key: "alpha"
+        label: "⚡ 유의수준 (alpha)"
+        args:
+          options: [0.05, 0.01, 0.001]
+          index: 0
+          format_func: "{value:.3f}"
+        caption: "α = {value}"
+
+      - type: "selectbox"
+        key: "correction"
+        label: "🔧 다중검정 보정"
+        args:
+          options: ["bonferroni", "sidak", "fdr_bh"]
+          index: 2
+
+      - type: "number_input"
+        key: "min_methods"
+        label: "🎯 앙상블 최소 방법 수"
+        args:
+          min_value: 1
+          max_value: 3
+          value: 2
+          step: 1
+        caption: "{value}개 이상"
