@@ -107,7 +107,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
             year_month_expr
         )
 
-        # ==================== 제조사-모델별 결함 분석 ====================
+        # ==================== 제조사-제품군별 결함 분석 ====================
         st.markdown("---")
         render_defect_analysis(
             lf,
@@ -221,10 +221,10 @@ def render_smart_insights(
             if len(high_cfr) > 0:
                 top_device = high_cfr[0, "manufacturer_product"]
                 top_cfr = high_cfr[0, "cfr"]
-                death_count = high_cfr[0, "death_count"]
+                severe_harm_count = high_cfr[0, "severe_harm_count"]
                 insights.append({
                     "type": "error",
-                    "text": f"⚠️ **{top_device}**의 치명률이 **{top_cfr:.2f}%**로 매우 높습니다 (사망 {death_count:,}건)"
+                    "text": f"⚠️ **{top_device}**의 치명률이 **{top_cfr:.2f}%**로 매우 높습니다 (중대 피해 {severe_harm_count:,}건)"
                 })
             else:
                 # CFR이 낮으면 긍정적 메시지
@@ -514,8 +514,8 @@ def render_defect_analysis(
     selected_products,
     year_month_expr
 ):
-    """제조사-모델별 결함 분석 렌더링"""
-    st.subheader("🔧 제조사 - 모델별 결함")
+    """제조사-제품군별 결함 분석 렌더링"""
+    st.subheader("🔧 제조사 - 제품군별 결함")
 
     if not selected_dates:
         st.info("결함 분석을 위해 년-월을 선택해주세요.")
@@ -566,9 +566,9 @@ def render_defect_analysis(
                         name=manufacturer,
                         x=mfr_data[ColumnNames.DEFECT_TYPE],
                         y=mfr_data["percentage"],
-                        text=mfr_data["percentage"].apply(lambda x: f"{x:.1f}%"),
+                        text=mfr_data["percentage"].apply(lambda x: f"{x:.2f}%"),
                         textposition='outside',
-                        hovertemplate='<b>%{fullData.name}</b><br>결함 유형: %{x}<br>비율: %{y:.1f}%<extra></extra>'
+                        hovertemplate='<b>%{fullData.name}</b><br>결함 유형: %{x}<br>비율: %{y:.2f}%<extra></extra>'
                     ))
 
                 fig.update_layout(
@@ -608,7 +608,12 @@ def render_defect_analysis(
                             key="download_defect_top5"
                         )
 
-                    st.dataframe(top5_display, width='stretch', hide_index=True)
+                    # 소수점 2자리 표시 포맷 적용
+                    st.dataframe(
+                        top5_display.style.format({"비율(%)": "{:.2f}"}),
+                        width='stretch',
+                        hide_index=True
+                    )
 
             with tab2:
                 # 1:1 비교 모드
@@ -657,7 +662,7 @@ def render_defect_analysis(
                             y=data_a["percentage"],
                             name=compare_a,
                             marker_color='#3B82F6',
-                            text=data_a["percentage"].apply(lambda x: f"{x:.1f}%"),
+                            text=data_a["percentage"].apply(lambda x: f"{x:.2f}%"),
                             textposition='outside',
                             showlegend=False
                         ),
@@ -671,7 +676,7 @@ def render_defect_analysis(
                             y=data_b["percentage"],
                             name=compare_b,
                             marker_color='#F59E0B',
-                            text=data_b["percentage"].apply(lambda x: f"{x:.1f}%"),
+                            text=data_b["percentage"].apply(lambda x: f"{x:.2f}%"),
                             textposition='outside',
                             showlegend=False
                         ),
@@ -721,19 +726,24 @@ def render_defect_analysis(
                         defect = row['결함 유형']
                         diff = row['차이 (A-B)']
                         if diff > 0:
-                            st.info(f"🔹 **{defect}**: {compare_a}가 {abs(diff):.1f}%p 더 높음")
+                            st.info(f"🔹 **{defect}**: {compare_a}가 {abs(diff):.2f}%p 더 높음")
                         else:
-                            st.info(f"🔸 **{defect}**: {compare_b}가 {abs(diff):.1f}%p 더 높음")
+                            st.info(f"🔸 **{defect}**: {compare_b}가 {abs(diff):.2f}%p 더 높음")
 
                     # 상세 테이블
                     with st.expander("📋 전체 비교 데이터"):
+                        # 소수점 2자리 표시 포맷 적용
                         st.dataframe(
                             diff_df.style.background_gradient(
                                 subset=['차이 (A-B)'],
                                 cmap='RdYlGn_r',
                                 vmin=-50,
                                 vmax=50
-                            ),
+                            ).format({
+                                f"{compare_a} (%)": "{:.2f}",
+                                f"{compare_b} (%)": "{:.2f}",
+                                "차이 (A-B)": "{:.2f}"
+                            }),
                             width='stretch',
                             hide_index=True
                         )
@@ -788,8 +798,9 @@ def render_defect_analysis(
                             key="download_defect_single"
                         )
 
+                    # 소수점 2자리 표시 포맷 적용
                     st.dataframe(
-                        chart_data[["결함 유형", "건수", "비율(%)"]],
+                        chart_data[["결함 유형", "건수", "비율(%)"]].style.format({"비율(%)": "{:.2f}"}),
                         width='stretch',
                         hide_index=True
                     )
@@ -890,8 +901,9 @@ def render_component_analysis(
                             key="download_component_analysis"
                         )
 
+                    # 소수점 2자리 표시 포맷 적용
                     st.dataframe(
-                        display_df,
+                        display_df.style.format({"비율(%)": "{:.2f}"}),
                         width='stretch',
                         hide_index=True
                     )
@@ -946,13 +958,13 @@ def render_cfr_analysis(
             display_df.insert(0, "순위", range(1, len(display_df) + 1))
             display_df = display_df[[
                 "순위", "manufacturer_product", "total_cases",
-                "death_count", "injury_count", "malfunction_count",
-                "cfr", "injury_rate", "malfunction_rate"
+                "death_count", "serious_injury_count", "minor_injury_count",
+                "severe_harm_count", "cfr"
             ]]
             display_df.columns = [
                 "순위", "제조사-제품군", "총 건수",
-                "사망", "부상", "오작동",
-                "CFR(%)", "부상률(%)", "오작동률(%)"
+                "사망", "중증부상", "경증부상",
+                "중대피해", "치명률(%)"
             ]
 
             # ==================== 요약 통계 (상단 배치) ====================
@@ -963,16 +975,16 @@ def render_cfr_analysis(
                 st.metric("분석 기기 수", f"{len(display_df):,}개")
 
             with summary_col2:
-                min_cfr = display_df["CFR(%)"].min()
-                st.metric("최소 CFR", f"{min_cfr:.2f}%")
+                min_cfr = display_df["치명률(%)"].min()
+                st.metric("최소 치명률", f"{min_cfr:.2f}%")
 
             with summary_col3:
-                max_cfr = display_df["CFR(%)"].max()
-                st.metric("최대 CFR", f"{max_cfr:.2f}%")
+                max_cfr = display_df["치명률(%)"].max()
+                st.metric("최대 치명률", f"{max_cfr:.2f}%")
 
             with summary_col4:
                 cfr_range = max_cfr - min_cfr
-                st.metric("CFR 범위", f"{cfr_range:.2f}%p")
+                st.metric("치명률 범위", f"{cfr_range:.2f}%p")
 
             st.markdown("---")
 
@@ -988,18 +1000,18 @@ def render_cfr_analysis(
 
                 fig_bar = go.Figure()
                 fig_bar.add_trace(go.Bar(
-                    x=top_10_df["CFR(%)"],
+                    x=top_10_df["치명률(%)"],
                     y=top_10_df["제조사-제품군"],
                     orientation='h',
                     marker=dict(
-                        color=top_10_df["CFR(%)"],
+                        color=top_10_df["치명률(%)"],
                         colorscale='Reds',
                         showscale=False,
                         line=dict(color='rgba(0,0,0,0.2)', width=1)
                     ),
-                    text=top_10_df["CFR(%)"].apply(lambda x: f"{x:.2f}%"),
+                    text=top_10_df["치명률(%)"].apply(lambda x: f"{x:.2f}%"),
                     textposition='outside',
-                    hovertemplate='<b>%{y}</b><br>CFR: %{x:.2f}%<br>순위: %{customdata}<extra></extra>',
+                    hovertemplate='<b>%{y}</b><br>치명률: %{x:.2f}%<br>순위: %{customdata}<extra></extra>',
                     customdata=top_10_df["순위"]
                 ))
 
@@ -1020,30 +1032,30 @@ def render_cfr_analysis(
 
                 st.plotly_chart(fig_bar, width='stretch', config={'displayModeBar': False})
 
-            # 우측: CFR vs 총 건수 산점도
+            # 우측: 치명률 vs 총 건수 산점도
             with viz_col2:
-                st.markdown("#### CFR vs 총 건수 (사망 건수 크기)")
+                st.markdown("#### 치명률 vs 총 건수 (중대피해 크기)")
 
                 fig_scatter = px.scatter(
                     display_df,
                     x="총 건수",
-                    y="CFR(%)",
-                    size="사망",
-                    color="CFR(%)",
+                    y="치명률(%)",
+                    size="중대피해",
+                    color="치명률(%)",
                     color_continuous_scale='Reds',
                     hover_name="제조사-제품군",
                     hover_data={
                         "순위": True,
                         "총 건수": ":,",
-                        "CFR(%)": ":.2f",
+                        "치명률(%)": ":.2f",
                         "사망": True,
-                        "부상": True,
-                        "오작동": True
+                        "중증부상": True,
+                        "중대피해": True
                     },
                     labels={
                         "총 건수": "총 보고 건수",
-                        "CFR(%)": "치명률 (%)",
-                        "사망": "사망 건수"
+                        "치명률(%)": "치명률 (%)",
+                        "중대피해": "중대 피해 건수"
                     }
                 )
 
@@ -1079,39 +1091,39 @@ def render_cfr_analysis(
                     get_significance_level
                 )
 
-                # 전체 평균 CFR 계산
-                total_deaths = display_df["사망"].sum()
+                # 전체 평균 CFR 계산 (치명률 = 중대피해/총건수)
+                total_severe_harm = display_df["중대피해"].sum()
                 total_cases = display_df["총 건수"].sum()
-                overall_cfr = (total_deaths / total_cases * 100) if total_cases > 0 else 0
+                overall_cfr = (total_severe_harm / total_cases * 100) if total_cases > 0 else 0
 
-                st.info(f"📌 전체 평균 CFR: **{overall_cfr:.2f}%** (사망 {total_deaths:,}건 / 총 {total_cases:,}건)")
+                st.info(f"📌 전체 평균 치명률: **{overall_cfr:.2f}%** (중대 피해 {total_severe_harm:,}건 / 총 {total_cases:,}건)")
 
                 # 통계 검정 결과
                 significance_results = []
 
                 for idx, row in display_df.head(10).iterrows():
                     device = row["제조사-제품군"]
-                    device_deaths = int(row["사망"])
+                    device_severe_harm = int(row["중대피해"])
                     device_total = int(row["총 건수"])
-                    device_cfr = row["CFR(%)"]
+                    device_cfr = row["치명률(%)"]
 
                     # 나머지 데이터
-                    other_deaths = total_deaths - device_deaths
+                    other_severe_harm = total_severe_harm - device_severe_harm
                     other_total = total_cases - device_total
 
                     if other_total > 0:
-                        # Fisher's Exact Test
+                        # Fisher's Exact Test (중대피해 기준)
                         odds_ratio, p_value = fisher_exact_test(
-                            device_deaths, device_total,
-                            other_deaths, other_total
+                            device_severe_harm, device_total,
+                            other_severe_harm, other_total
                         )
 
                         # 신뢰구간 계산
-                        ci_lower, ci_upper = calculate_confidence_interval(device_deaths, device_total)
+                        ci_lower, ci_upper = calculate_confidence_interval(device_severe_harm, device_total)
 
                         significance_results.append({
                             "제조사-제품군": device,
-                            "CFR(%)": device_cfr,
+                            "치명률(%)": device_cfr,
                             "95% CI": f"[{ci_lower:.2f}, {ci_upper:.2f}]",
                             "p-value": p_value,
                             "유의성": get_significance_level(p_value),
@@ -1128,25 +1140,30 @@ def render_cfr_analysis(
                         st.markdown("**🔴 통계적으로 유의한 기기 (p < 0.05)**")
                         for _, row in significant_devices.iterrows():
                             device = row["제조사-제품군"]
-                            cfr = row["CFR(%)"]
+                            cfr = row["치명률(%)"]
                             sig = row["유의성"]
                             interpretation = row["해석"]
                             ci = row["95% CI"]
 
                             if cfr > overall_cfr:
-                                st.error(f"**{device}** {sig}: CFR {cfr:.2f}% (평균보다 높음) - {interpretation}, 95% CI {ci}")
+                                st.error(f"**{device}** {sig}: 치명률 {cfr:.2f}% (평균보다 높음) - {interpretation}, 95% CI {ci}")
                             else:
-                                st.success(f"**{device}** {sig}: CFR {cfr:.2f}% (평균보다 낮음) - {interpretation}, 95% CI {ci}")
+                                st.success(f"**{device}** {sig}: 치명률 {cfr:.2f}% (평균보다 낮음) - {interpretation}, 95% CI {ci}")
                     else:
                         st.info("통계적으로 유의한 차이를 보이는 기기가 없습니다 (α = 0.05)")
 
                     # 상세 테이블
                     with st.expander("📋 통계 검정 상세 결과"):
+                        # 소수점 2자리 표시 포맷 적용
                         st.dataframe(
                             sig_df.style.apply(
                                 lambda x: ['background-color: #fee' if v < 0.05 else '' for v in x],
                                 subset=['p-value']
-                            ),
+                            ).format({
+                                "치명률(%)": "{:.2f}",
+                                "Odds Ratio": "{:.2f}",
+                                "p-value": "{:.4f}"
+                            }),
                             width='stretch',
                             hide_index=True
                         )
@@ -1179,7 +1196,12 @@ def render_cfr_analysis(
                     key="download_cfr_analysis"
                 )
 
-            st.dataframe(display_df, width='stretch', hide_index=True)
+            # 소수점 2자리 표시 포맷 적용
+            st.dataframe(
+                display_df.style.format({"치명률(%)": "{:.2f}"}),
+                width='stretch',
+                hide_index=True
+            )
 
         else:
             st.info(f"선택한 조건에 해당하는 데이터가 없습니다. (최소 {min_cases}건 이상의 보고 건수 필요)")
@@ -1399,7 +1421,7 @@ def render_cluster_and_event_analysis(
                                 <div class="bar-wrapper">
                                     <div class="bar-fill" style="width: {bar_width}%;"></div>
                                     <span class="bar-content">{count:,}</span>
-                                    <span class="bar-ratio">{ratio:.1f}%</span>
+                                    <span class="bar-ratio">{ratio:.2f}%</span>
                                 </div>
                             </div>
                             """

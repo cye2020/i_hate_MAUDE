@@ -15,6 +15,10 @@ import spike_tab as s_tab
 from dashboard.utils.sidebar_manager import create_sidebar
 from utils.dashboard_config import get_config
 from utils.constants import DisplayNames
+from dashboard.utils.custom_css import apply_custom_css
+
+# 커스텀 CSS 적용
+apply_custom_css()
 
 
 # 프로젝트 루트 경로 설정

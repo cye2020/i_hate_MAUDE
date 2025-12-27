@@ -144,7 +144,7 @@ def render_spike_filter_summary(
 
     # Z-score 임계값
     if z_threshold:
-        badges.append(f"📉 Z-score ≥ {z_threshold:.1f}σ")
+        badges.append(f"📉 Z-score ≥ {z_threshold:.2f}σ")
 
     # 유의수준
     alpha = kwargs.get('alpha')
@@ -352,7 +352,7 @@ def create_component_bar_chart(
             showscale=False,
             line=dict(color='rgba(0,0,0,0.2)', width=1)
         ),
-        text=[f"{r:.1f}%" for r in ratios],
+        text=[f"{r:.2f}%" for r in ratios],
         textposition='outside',
         hovertemplate='<b>%{y}</b><br>건수: %{x:,}<br>비율: %{text}<extra></extra>'
     ))
@@ -769,7 +769,7 @@ def create_html_bar_chart(
 
         # 값 표시
         if ratio_col and ratio > 0:
-            value_text = f"{value:,}건 ({ratio:.1f}%)"
+            value_text = f"{value:,}건 ({ratio:.2f}%)"
         else:
             value_text = f"{value:,}건"
 

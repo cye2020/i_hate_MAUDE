@@ -73,7 +73,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     st.markdown("---")
 
     # 스파이크 탐지 수행 (기본값으로 미리 계산)
-    with st.spinner("스파이크 탐지 분석 중..."):
+    with st.spinner("급증 탐지 분석 중..."):
         result_df = outlier_detect_check(
             lf=lf,
             window=window,
@@ -90,7 +90,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.info("분석할 데이터가 없습니다.")
         return
 
-    # 스파이크 키워드만 필터링 (앙상블 기준)
+    # 급증 키워드만 필터링 (앙상블 기준)
     spike_df = result_df.filter(pl.col("is_spike_ensemble") == True)
 
     # ========================================
@@ -99,7 +99,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     st.subheader("💡 핵심 인사이트")
 
     if len(spike_df) > 0:
-        # 1️⃣ 가장 위험한 스파이크 (3개 방법 모두 동의)
+        # 1️⃣ 가장 위험한 급증 (3개 방법 모두 동의)
         critical_spikes = spike_df.filter(pl.col("n_methods") == 3).sort("ratio", descending=True)
 
         if len(critical_spikes) > 0:
@@ -110,19 +110,19 @@ def show(filters=None, lf: pl.LazyFrame = None):
             c_base = top_critical["C_base"][0]
 
             st.error(f"""
-🚨 **최고 위험 스파이크**: **{keyword}**
-- 보고 건수: {c_base}건 → **{c_recent}건** ({ratio:.1f}배 급증)
-- 3가지 탐지 방법 모두 스파이크로 판정
+🚨 **최고 위험 급증**: **{keyword}**
+- 보고 건수: {c_base}건 → **{c_recent}건** ({ratio:.2f}배 급증)
+- 3가지 탐지 방법 모두 급증으로 판정
 - ⚠️ **즉시 조사 권장** (FDA 보고서 검토, 원인 분석 필요)
             """)
 
-        # 2️⃣ 새롭게 등장한 스파이크 (이전 기간엔 없었던 키워드)
+        # 2️⃣ 새롭게 등장한 급증 (이전 기간엔 없었던 키워드)
         new_spikes = spike_df.filter(pl.col("C_base") < 5)  # 기준 기간에 거의 없었던 키워드
         if len(new_spikes) > 0:
             new_count = len(new_spikes)
             new_keywords = new_spikes.head(3)["keyword"].to_list()
             st.warning(f"""
-⚡ **신규 등장 스파이크**: {new_count}개
+⚡ **신규 등장 급증**: {new_count}개
 - 예시: {', '.join(new_keywords)}
 - 과거에 거의 보고되지 않았으나 최근 급증
 - 💡 신규 제품 출시 또는 새로운 문제 발생 가능성
@@ -132,7 +132,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
         severe_count = len(spike_df.filter(pl.col("pattern") == "severe"))
         if severe_count > 0:
             st.warning(f"""
-🔴 **Severe 패턴**: {severe_count}개
+🔴 **심각 패턴**: {severe_count}개
 - 높은 급증률 + 많은 보고 건수 조합
 - **우선순위 높음**: 상위 10개 키워드 개별 검토 필요
             """)
@@ -140,30 +140,30 @@ def show(filters=None, lf: pl.LazyFrame = None):
             alert_count = len(spike_df.filter(pl.col("pattern") == "alert"))
             if alert_count > 0:
                 st.info(f"""
-🟠 **Alert 패턴**: {alert_count}개
+🟠 **경고 패턴**: {alert_count}개
 - 중간 수준의 급증 또는 보고 건수
 - 모니터링 필요
                 """)
     else:
-        st.success("✅ 현재 기간에 통계적으로 유의미한 스파이크가 탐지되지 않았습니다.")
+        st.success("✅ 현재 기간에 통계적으로 유의미한 급증이 탐지되지 않았습니다.")
         st.info("💡 이는 좋은 신호입니다. 제품 품질이 안정적으로 유지되고 있습니다.")
 
     st.markdown("---")
 
     # ========================================
-    # 🚨 SECTION 1: 스파이크 탐지 요약
+    # 🚨 SECTION 1: 급증 탐지 요약
     # ========================================
-    st.subheader("🚨 스파이크 탐지 요약")
+    st.subheader("🚨 급증 탐지 요약")
 
     # 주요 메트릭
     col_main1, col_main2, col_main3 = st.columns([2, 2, 3])
 
     with col_main1:
         st.metric(
-            label="⚠️ 탐지된 스파이크",
+            label="⚠️ 탐지된 급증",
             value=f"{len(spike_df)}개",
             delta=f"전체 {len(result_df)}개 중",
-            help="앙상블 방법으로 탐지된 스파이크 키워드 수"
+            help="앙상블 방법으로 탐지된 급증 키워드 수"
         )
 
     with col_main2:
@@ -171,8 +171,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
             avg_methods = spike_df["n_methods"].mean()
             st.metric(
                 label="📊 평균 탐지 방법 수",
-                value=f"{avg_methods:.1f}개",
-                help="Ratio/Z-score/Poisson 중 몇 개의 방법이 스파이크로 판정했는지"
+                value=f"{avg_methods:.2f}개",
+                help="Ratio/Z-score/Poisson 중 몇 개의 방법이 급증으로 판정했는지"
             )
         else:
             st.metric(label="📊 평균 탐지 방법 수", value="N/A")
@@ -185,7 +185,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
             st.metric(
                 label="🔥 최대 급증 키워드",
                 value=max_keyword,
-                delta=f"{max_ratio:.1f}x 증가",
+                delta=f"{max_ratio:.2f}x 증가",
                 help="기준 기간 대비 가장 많이 증가한 키워드"
             )
         else:
@@ -197,10 +197,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
 
     col1, col2, col3, col4 = st.columns(4)
     pattern_map = {
-        "severe": ("🔴 Severe", col1),
-        "alert": ("🟠 Alert", col2),
-        "attention": ("🟡 Attention", col3),
-        "general": ("🟢 General", col4)
+        "severe": ("🔴 심각", col1),
+        "alert": ("🟠 경고", col2),
+        "attention": ("🟡 주의", col3),
+        "general": ("🟢 일반", col4)
     }
 
     for pattern, (label, col) in pattern_map.items():
@@ -236,19 +236,19 @@ def show(filters=None, lf: pl.LazyFrame = None):
 
     with col_btn1:
         severe_count = len(severe_keywords)
-        if st.button(f"🔴 Severe ({severe_count})", use_container_width=True, help=f"Severe 패턴 키워드 {severe_count}개 중 최대 10개 선택"):
+        if st.button(f"🔴 심각 ({severe_count})", use_container_width=True, help=f"심각 패턴 키워드 {severe_count}개 중 최대 10개 선택"):
             st.session_state.selected_keywords = severe_keywords[:10]
             st.rerun()
 
     with col_btn2:
         alert_count = len(alert_keywords)
-        if st.button(f"🟠 Alert ({alert_count})", use_container_width=True, help=f"Alert 패턴 키워드 {alert_count}개 중 최대 10개 선택"):
+        if st.button(f"🟠 경고 ({alert_count})", use_container_width=True, help=f"경고 패턴 키워드 {alert_count}개 중 최대 10개 선택"):
             st.session_state.selected_keywords = alert_keywords[:10]
             st.rerun()
 
     with col_btn3:
         spike_count = len(spike_keywords)
-        if st.button(f"⚠️ 스파이크 ({spike_count})", use_container_width=True, help=f"스파이크로 탐지된 키워드 {spike_count}개 중 최대 10개 선택"):
+        if st.button(f"⚠️ 급증 ({spike_count})", use_container_width=True, help=f"급증으로 탐지된 키워드 {spike_count}개 중 최대 10개 선택"):
             st.session_state.selected_keywords = spike_keywords[:10]
             st.rerun()
 
@@ -293,6 +293,22 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ========================================
     st.subheader("📋 전체 분석 결과")
 
+    # 필터 도움말
+    with st.expander("ℹ️ 필터 사용 방법", expanded=False):
+        st.markdown("""
+        **📊 패턴 필터**: 표시할 패턴 유형 선택 (심각/경고/주의/일반)
+
+        **⚠️ 급증만 체크박스**:
+        - ✅ 체크: 앙상블 방법으로 **급증 판정**된 키워드만 표시
+        - ☐ 미체크: 선택한 패턴의 **전체 키워드** 표시 (급증 아닌 것도 포함)
+
+        **🔘 빠른 필터 프리셋**:
+        - 🔴 **Critical만**: 심각 패턴 + 급증만 (가장 위험한 항목)
+        - ⚠️ **주의 필요**: 심각+경고 패턴 전체 (급증 아닌 것도 포함)
+        - 📊 **전체 급증**: 모든 패턴의 급증만 (패턴 무관하게 급증 판정된 것)
+        - 🔄 **초기화**: 기본 설정 (심각+경고+주의 패턴 전체)
+        """)
+
     # 빠른 프리셋 버튼
     st.markdown("**🔘 빠른 필터**")
     col_preset1, col_preset2, col_preset3, col_preset4 = st.columns(4)
@@ -304,19 +320,19 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.session_state.table_spike_only = False
 
     with col_preset1:
-        if st.button("🔴 Critical만", use_container_width=True, help="Severe 패턴 + 스파이크만 표시"):
+        if st.button("🔴 Critical만", use_container_width=True, help="심각 패턴 + 급증만 표시"):
             st.session_state.table_pattern_filter = ["severe"]
             st.session_state.table_spike_only = True
             st.rerun()
 
     with col_preset2:
-        if st.button("⚠️ 주의 필요", use_container_width=True, help="Severe + Alert 패턴 전체"):
+        if st.button("⚠️ 주의 필요", use_container_width=True, help="심각 + 경고 패턴 전체"):
             st.session_state.table_pattern_filter = ["severe", "alert"]
             st.session_state.table_spike_only = False
             st.rerun()
 
     with col_preset3:
-        if st.button("📊 전체 스파이크", use_container_width=True, help="모든 패턴의 스파이크만"):
+        if st.button("📊 전체 급증", use_container_width=True, help="모든 패턴의 급증만"):
             st.session_state.table_pattern_filter = ["severe", "alert", "attention", "general"]
             st.session_state.table_spike_only = True
             st.rerun()
@@ -335,10 +351,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
             options=["severe", "alert", "attention", "general"],
             default=st.session_state.table_pattern_filter,
             format_func=lambda x: {
-                "severe": "🔴 Severe",
-                "alert": "🟠 Alert",
-                "attention": "🟡 Attention",
-                "general": "🟢 General"
+                "severe": "🔴 심각",
+                "alert": "🟠 경고",
+                "attention": "🟡 주의",
+                "general": "🟢 일반"
             }[x],
             key="pattern_filter_table"
         )
@@ -347,9 +363,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
 
     with col_spike_only:
         show_spike_only = st.checkbox(
-            "⚠️ 스파이크만",
+            "⚠️ 급증만",
             value=st.session_state.table_spike_only,
-            help="앙상블 스파이크로 판정된 키워드만 표시",
+            help="앙상블 급증으로 판정된 키워드만 표시",
             key="spike_only_checkbox"
         )
         # 선택값을 세션 상태에 저장
@@ -395,10 +411,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
 
     with col_download2:
         if len(spike_df) > 0:
-            st.markdown("**📥 스파이크만 다운로드**")
+            st.markdown("**📥 급증만 다운로드**")
             csv_spike = spike_df.write_csv()
             st.download_button(
-                label="스파이크만 CSV 다운로드",
+                label="급증만 CSV 다운로드",
                 data=csv_spike,
                 file_name=f"spike_detection_spikes_{as_of_month}_w{window}.csv",
                 mime="text/csv"
@@ -507,9 +523,9 @@ def create_spike_chart(
 
     # 레이아웃 설정
     fig.update_layout(
-        title=f"Spike Detection - Keyword Ratio Over Time (Window: {window}M, Threshold: {z_threshold:.1f}σ)",
-        xaxis_title="Month",
-        yaxis_title="Ratio (배수) - 기준 기간 대비",
+        title=f"급증 탐지 - 키워드 비율 추이 (윈도우: {window}개월, 임계값: {z_threshold:.2f}σ)",
+        xaxis_title="월",
+        yaxis_title="비율 (배수)",
         yaxis=dict(range=[0, y_max]),
         hovermode='x unified',
         height=600,
@@ -527,7 +543,7 @@ def create_spike_chart(
     fig.add_hline(
         y=z_threshold,
         line=dict(color="red", width=2, dash="dash"),
-        annotation_text=f"Z-score Threshold ({z_threshold}σ)",
+        annotation_text=f"Z-score 임계값 ({z_threshold}σ)",
         annotation_position="right",
         annotation_font=dict(color="red", size=10)
     )
@@ -606,14 +622,14 @@ def prepare_spike_table(spike_df: pl.DataFrame) -> pl.DataFrame:
     """
     # 패턴에 이모지 추가
     pattern_emoji = (
-        pl.when(pl.col("pattern") == "severe").then(pl.lit("🔴 Severe"))
-        .when(pl.col("pattern") == "alert").then(pl.lit("🟠 Alert"))
-        .when(pl.col("pattern") == "attention").then(pl.lit("🟡 Attention"))
-        .otherwise(pl.lit("🟢 General"))
+        pl.when(pl.col("pattern") == "severe").then(pl.lit("🔴 심각"))
+        .when(pl.col("pattern") == "alert").then(pl.lit("🟠 경고"))
+        .when(pl.col("pattern") == "attention").then(pl.lit("🟡 주의"))
+        .otherwise(pl.lit("🟢 일반"))
     )
 
-    # 증감 계산
-    increase = pl.col("C_recent") - pl.col("C_base")
+    # 증감 계산 (signed int로 명시적 캐스팅하여 음수 오버플로우 방지)
+    increase = (pl.col("C_recent").cast(pl.Int64) - pl.col("C_base").cast(pl.Int64))
 
     # 컬럼 순서: 중요한 정보 우선 (키워드 → 패턴 → 비율 → 증감 → 방법 수 → 상세)
     display_df = spike_df.select([

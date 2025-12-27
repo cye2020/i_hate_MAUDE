@@ -154,20 +154,26 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
     # ==================== 1. 전체 요약 메트릭 ====================
     st.subheader(f"📊 Cluster {selected_cluster} 요약")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("전체 케이스", f"{cluster_data['total_count']:,}")
     with col2:
+        # 치명률 (사망 + 중증부상)
         death_count = cluster_data['harm_summary']['total_deaths']
+        serious_count = cluster_data['harm_summary']['total_serious_injuries']
+        severe_harm_count = death_count + serious_count
+        cfr = (severe_harm_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
+        st.metric("치명률 (CFR)", f"{cfr:.2f}%",
+                  delta=f"{severe_harm_count:,}건", delta_color="inverse")
+    with col3:
         death_rate = (death_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
         st.metric("사망", f"{death_count:,}",
                   delta=f"{death_rate:.2f}%", delta_color="inverse")
-    with col3:
-        serious_count = cluster_data['harm_summary']['total_serious_injuries']
+    with col4:
         serious_rate = (serious_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
         st.metric("중증 부상", f"{serious_count:,}",
                   delta=f"{serious_rate:.2f}%", delta_color="inverse")
-    with col4:
+    with col5:
         minor_count = cluster_data['harm_summary']['total_minor_injuries']
         minor_rate = (minor_count / cluster_data['total_count'] * 100) if cluster_data['total_count'] > 0 else 0
         st.metric("경증 부상", f"{minor_count:,}",
@@ -211,7 +217,15 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
 
             # 상세 데이터
             with st.expander("📋 상세 데이터"):
-                st.dataframe(top_components, width='stretch', hide_index=True)
+                # 소수점 2자리 표시 포맷 적용
+                if 'ratio' in top_components.columns:
+                    st.dataframe(
+                        top_components.style.format({"ratio": "{:.2f}"}),
+                        width='stretch',
+                        hide_index=True
+                    )
+                else:
+                    st.dataframe(top_components, width='stretch', hide_index=True)
         else:
             st.info("해당 클러스터에는 부품 정보가 없습니다.")
 
@@ -249,14 +263,14 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
         # 통계 요약
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("평균 월별 발생", f"{time_series['count'].mean():.1f}")
+            st.metric("평균 월별 발생", f"{time_series['count'].mean():.2f}")
         with col2:
             st.metric("최대 월별 발생", f"{time_series['count'].max()}")
         with col3:
             st.metric("최소 월별 발생", f"{time_series['count'].min()}")
         with col4:
             std_dev = time_series['count'].std()
-            st.metric("표준편차", f"{std_dev:.1f}")
+            st.metric("표준편차", f"{std_dev:.2f}")
     else:
         st.info("시계열 데이터가 없습니다.")
 
@@ -402,11 +416,29 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
 
         with col1:
             st.markdown(f"**Cluster {cluster_a} 상위 부품**")
-            st.dataframe(components_a.head(10), width='stretch', hide_index=True)
+            # 소수점 2자리 표시 포맷 적용
+            comp_a_display = components_a.head(10)
+            if 'ratio' in comp_a_display.columns:
+                st.dataframe(
+                    comp_a_display.style.format({"ratio": "{:.2f}"}),
+                    width='stretch',
+                    hide_index=True
+                )
+            else:
+                st.dataframe(comp_a_display, width='stretch', hide_index=True)
 
         with col2:
             st.markdown(f"**Cluster {cluster_b} 상위 부품**")
-            st.dataframe(components_b.head(10), width='stretch', hide_index=True)
+            # 소수점 2자리 표시 포맷 적용
+            comp_b_display = components_b.head(10)
+            if 'ratio' in comp_b_display.columns:
+                st.dataframe(
+                    comp_b_display.style.format({"ratio": "{:.2f}"}),
+                    width='stretch',
+                    hide_index=True
+                )
+            else:
+                st.dataframe(comp_b_display, width='stretch', hide_index=True)
     else:
         st.info("부품 데이터가 부족합니다.")
 
@@ -439,7 +471,8 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
             })
 
     overview_df = pd.DataFrame(all_cluster_data)
-    overview_df['death_rate'] = (overview_df['deaths'] / overview_df['total_count'] * 100).round(2)
+    # 치명률 = (사망 + 중증부상) / 총 건수 × 100
+    overview_df['cfr'] = ((overview_df['deaths'] + overview_df['serious_injuries']) / overview_df['total_count'] * 100).round(2)
     overview_df['cluster_label'] = overview_df['cluster'].apply(lambda x: f"Cluster {x}")
 
     # ==================== 1. 클러스터별 케이스 수 비교 ====================
@@ -507,28 +540,28 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
 
     st.markdown("---")
 
-    # ==================== 3. 클러스터별 사망률 ====================
-    st.markdown("#### 💀 클러스터별 사망률")
+    # ==================== 3. 클러스터별 치명률 ====================
+    st.markdown("#### 💀 클러스터별 치명률")
 
-    fig_death_rate = px.scatter(
+    fig_cfr = px.scatter(
         overview_df,
         x='cluster_label',
-        y='death_rate',
+        y='cfr',
         size='total_count',
-        color='death_rate',
+        color='cfr',
         color_continuous_scale='Reds',
-        labels={'cluster_label': '클러스터', 'death_rate': '사망률 (%)'},
-        hover_data={'total_count': ':,', 'deaths': True}
+        labels={'cluster_label': '클러스터', 'cfr': '치명률 (%)'},
+        hover_data={'total_count': ':,', 'deaths': True, 'serious_injuries': True}
     )
 
-    fig_death_rate.update_layout(height=400)
-    st.plotly_chart(fig_death_rate, width='stretch', config={'displayModeBar': False})
+    fig_cfr.update_layout(height=400)
+    st.plotly_chart(fig_cfr, width='stretch', config={'displayModeBar': False})
 
     # 요약 테이블
     with st.expander("📋 전체 클러스터 요약 테이블"):
         display_df = overview_df[[
             'cluster_label', 'total_count', 'deaths',
-            'serious_injuries', 'minor_injuries', 'no_harm', 'death_rate'
+            'serious_injuries', 'minor_injuries', 'no_harm', 'cfr'
         ]].rename(columns={
             'cluster_label': '클러스터',
             'total_count': '전체 케이스',
@@ -536,10 +569,15 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
             'serious_injuries': '중증 부상',
             'minor_injuries': '경증 부상',
             'no_harm': '부상 없음',
-            'death_rate': '사망률 (%)'
+            'cfr': '치명률 (%)'
         })
 
-        st.dataframe(display_df, width='stretch', hide_index=True)
+        # 소수점 2자리 표시 포맷 적용
+        st.dataframe(
+            display_df.style.format({"치명률 (%)": "{:.2f}"}),
+            width='stretch',
+            hide_index=True
+        )
 
 
 def render_cluster_insights(lf, available_clusters, selected_dates, year_month_expr):
@@ -568,22 +606,24 @@ def render_cluster_insights(lf, available_clusters, selected_dates, year_month_e
             "text": f"📊 **Cluster {largest_cluster[0]}**가 가장 많은 케이스를 포함합니다 ({largest_cluster[1]['total_count']:,}건)"
         })
 
-        # 2. 가장 위험한 클러스터 (사망률 기준)
-        death_rates = [(c_id, data['harm_summary']['total_deaths'] / data['total_count'] * 100 if data['total_count'] > 0 else 0, data['harm_summary']['total_deaths'])
-                       for c_id, data in all_data]
-        highest_death_rate = max(death_rates, key=lambda x: x[1])
+        # 2. 가장 위험한 클러스터 (치명률 기준: 사망 + 중증부상)
+        cfr_rates = [(c_id,
+                      (data['harm_summary']['total_deaths'] + data['harm_summary']['total_serious_injuries']) / data['total_count'] * 100 if data['total_count'] > 0 else 0,
+                      data['harm_summary']['total_deaths'] + data['harm_summary']['total_serious_injuries'])
+                     for c_id, data in all_data]
+        highest_cfr = max(cfr_rates, key=lambda x: x[1])
 
-        if highest_death_rate[1] > 0:
+        if highest_cfr[1] > 0:
             insights.append({
                 "type": "error",
-                "text": f"⚠️ **Cluster {highest_death_rate[0]}**의 사망률이 **{highest_death_rate[1]:.2f}%**로 가장 높습니다 (사망 {highest_death_rate[2]:,}건)"
+                "text": f"⚠️ **Cluster {highest_cfr[0]}**의 치명률이 **{highest_cfr[1]:.2f}%**로 가장 높습니다 (중대 피해 {highest_cfr[2]:,}건)"
             })
 
         # 3. 가장 안전한 클러스터
-        lowest_death_rate = min(death_rates, key=lambda x: x[1])
+        lowest_cfr = min(cfr_rates, key=lambda x: x[1])
         insights.append({
             "type": "success",
-            "text": f"✅ **Cluster {lowest_death_rate[0]}**의 사망률이 **{lowest_death_rate[1]:.2f}%**로 가장 낮습니다"
+            "text": f"✅ **Cluster {lowest_cfr[0]}**의 치명률이 **{lowest_cfr[1]:.2f}%**로 가장 낮습니다"
         })
 
         # 4. 공통 문제 부품
@@ -625,9 +665,9 @@ def render_cluster_insights(lf, available_clusters, selected_dates, year_month_e
 
     recommendations = []
 
-    # 사망률 높은 클러스터에 대한 권장
-    if highest_death_rate[1] > 5.0:
-        recommendations.append(f"- **Cluster {highest_death_rate[0]}**에 대한 집중 조사 및 안전성 개선이 필요합니다")
+    # 치명률 높은 클러스터에 대한 권장
+    if highest_cfr[1] > 5.0:
+        recommendations.append(f"- **Cluster {highest_cfr[0]}**에 대한 집중 조사 및 안전성 개선이 필요합니다")
 
     # 케이스 수 많은 클러스터
     if largest_cluster[1]['total_count'] > 100:

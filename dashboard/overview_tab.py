@@ -27,7 +27,7 @@ def plot_sparkline(data_list, key="sparkline"):
             fill='tozeroy',
             fillcolor='rgba(31, 119, 180, 0.1)',
             showlegend=False,
-            hovertemplate='%{y:.1f}<extra></extra>'
+            hovertemplate='%{y:.2f}<extra></extra>'
         )
     )
 
@@ -93,7 +93,7 @@ def plot_dual_axis_chart(
     )
 
     # 3. Dual-Axis 차트 생성
-    st.subheader("📊 Report Count & Severe Harm Rate (Dual-Axis)")
+    st.subheader("📈 보고 건수 및 중대 피해율 추이")
 
     # subplots 사용하여 이중 축 생성
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -103,7 +103,7 @@ def plot_dual_axis_chart(
         go.Bar(
             x=agg_data["date"],
             y=agg_data["count"],
-            name="Report Count",
+            name="보고 건수",
             marker_color='rgba(31, 119, 180, 0.6)',
             yaxis='y'
         ),
@@ -115,7 +115,7 @@ def plot_dual_axis_chart(
         go.Scatter(
             x=agg_data["date"],
             y=agg_data["severe_harm_rate"],
-            name="Severe Harm Rate (%)",
+            name="중대 피해율 (%)",
             mode='lines+markers',
             line=dict(color='red', width=2),
             marker=dict(size=6),
@@ -130,7 +130,7 @@ def plot_dual_axis_chart(
         hovermode='x unified',
         margin=dict(l=50, r=50, t=40, b=80),
         xaxis=dict(
-            title="Date",
+            title="날짜",
             showgrid=True,
             gridcolor='rgba(128, 128, 128, 0.2)',
             dtick="M1",
@@ -146,8 +146,8 @@ def plot_dual_axis_chart(
     )
 
     # Y축 제목 설정
-    fig.update_yaxes(title_text="Report Count", secondary_y=False)
-    fig.update_yaxes(title_text="Severe Harm Rate (%)", secondary_y=True)
+    fig.update_yaxes(title_text="보고 건수", secondary_y=False)
+    fig.update_yaxes(title_text="중대 피해율 (%)", secondary_y=True)
 
     st.plotly_chart(fig, width='stretch', key='dual_axis_chart')
 
@@ -161,7 +161,7 @@ def plot_risk_matrix(
         view_mode: str = "defect_type",
         top_n: int = 20
     ):
-    """Risk Matrix: 발생 빈도 vs 치명도
+    """Risk Matrix: 발생 빈도 vs 치명률
 
     Args:
         data: LazyFrame 데이터
@@ -197,7 +197,7 @@ def plot_risk_matrix(
 
     # 제목 설정
     view_titles = {
-        "defect_type": "Defect Type별 리스크",
+        "defect_type": "결함 유형별 리스크",
         "manufacturer": "제조사별 리스크",
         "product": "제품군별 리스크"
     }
@@ -245,8 +245,8 @@ def plot_risk_matrix(
             hovertemplate=(
                 '<b>%{text}</b><br>' +
                 '발생 건수: %{x:,}<br>' +
-                '치명률: %{y:.1f}%<br>' +
-                '결함 확정률: %{marker.size:.1f}%<br>' +
+                '치명률: %{y:.2f}%<br>' +
+                '결함 확정률: %{marker.size:.2f}%<br>' +
                 '<extra></extra>'
             ),
             showlegend=False
@@ -270,8 +270,8 @@ def plot_risk_matrix(
 
     fig.update_layout(
         height=600,
-        xaxis=dict(title="Report Count (발생 빈도)", showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)'),
-        yaxis=dict(title="Severe Harm Rate (%) (치명도)", showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)'),
+        xaxis=dict(title="발생 빈도 (건)", showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)'),
+        yaxis=dict(title="치명률 (%)", showgrid=True, gridcolor='rgba(128, 128, 128, 0.2)'),
         hovermode='closest',
         annotations=annotations,
         margin=dict(l=50, r=50, t=40, b=50)
@@ -350,14 +350,14 @@ def show(filters=None, lf: pl.LazyFrame = None):
         st.metric(
             label="📁 총 보고서 수",
             value=f"{big_numbers['total_reports']:,}건",
-            delta=f"{big_numbers['total_reports_delta']:+.1f}%" if big_numbers['total_reports_delta'] is not None else None
+            delta=f"{big_numbers['total_reports_delta']:+.2f}%" if big_numbers['total_reports_delta'] is not None else None
         )
         # Sparkline 추가
         plot_sparkline(big_numbers['total_reports_sparkline'], key="sparkline_total")
 
     with col2:
         # delta에 이전 기간의 가장 치명적인 defect type 표시
-        prev_defect_info = f"이전: {big_numbers['prev_most_critical_defect_type']} ({big_numbers['prev_most_critical_defect_rate']:.1f}%)"
+        prev_defect_info = f"이전: {big_numbers['prev_most_critical_defect_type']} ({big_numbers['prev_most_critical_defect_rate']:.2f}%)"
         st.metric(
             label="🔥 가장 치명적인 Defect Type",
             value=big_numbers['most_critical_defect_type'],
@@ -369,8 +369,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
     with col3:
         st.metric(
             label="⚠️ 중대 피해 발생률",
-            value=f"{big_numbers['severe_harm_rate']:.1f}%",
-            delta=f"{big_numbers['severe_harm_rate_delta']:+.1f}%p" if big_numbers['severe_harm_rate_delta'] is not None else None
+            value=f"{big_numbers['severe_harm_rate']:.2f}%",
+            delta=f"{big_numbers['severe_harm_rate_delta']:+.2f}%p" if big_numbers['severe_harm_rate_delta'] is not None else None
         )
         # Sparkline 추가
         plot_sparkline(big_numbers['severe_harm_sparkline'], key="sparkline_harm")
@@ -378,8 +378,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
     with col4:
         st.metric(
             label="🔧 제조사 결함 확정률",
-            value=f"{big_numbers['defect_confirmed_rate']:.1f}%",
-            delta=f"{big_numbers['defect_confirmed_rate_delta']:+.1f}%p" if big_numbers['defect_confirmed_rate_delta'] is not None else None
+            value=f"{big_numbers['defect_confirmed_rate']:.2f}%",
+            delta=f"{big_numbers['defect_confirmed_rate_delta']:+.2f}%p" if big_numbers['defect_confirmed_rate_delta'] is not None else None
         )
         # Sparkline 추가
         plot_sparkline(big_numbers['defect_sparkline'], key="sparkline_defect")
@@ -396,10 +396,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     st.markdown("---")
 
     # Risk Matrix Analysis
-    st.header("🔍 산업 분석 (Industry Analysis)")
-
-    # Risk Matrix
-    st.markdown("---")
+    st.subheader("🔍 리스크 매트릭스")
 
     # Risk Matrix View Mode 선택
     risk_col1, risk_col2 = st.columns([3, 1])
@@ -410,15 +407,15 @@ def show(filters=None, lf: pl.LazyFrame = None):
     with risk_col2:
         view_mode = st.selectbox(
             "분석 단위",
-            options=["Defect Type", "Manufacturer", "Product"],
+            options=["결함 유형", "제조사", "제품군"],
             index=0,
             key="risk_view_mode"
         )
 
         view_mode_map = {
-            "Defect Type": "defect_type",
-            "Manufacturer": "manufacturer",
-            "Product": "product"
+            "결함 유형": "defect_type",
+            "제조사": "manufacturer",
+            "제품군": "product"
         }
 
         selected_view_mode = view_mode_map[view_mode]

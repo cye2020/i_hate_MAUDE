@@ -257,7 +257,6 @@ def calculate_cfr_by_device(
     _lf: pl.LazyFrame,
     manufacturer_col: str = ColumnNames.MANUFACTURER,
     product_col: str = ColumnNames.PRODUCT_CODE,
-    event_column: str = ColumnNames.EVENT_TYPE,
     date_col: str = ColumnNames.DATE_RECEIVED,
     selected_dates: Optional[List[str]] = None,
     selected_manufacturers: Optional[List[str]] = None,
@@ -268,13 +267,12 @@ def calculate_cfr_by_device(
 ) -> pl.DataFrame:
     """제조사-제품군 조합별 치명률(Case Fatality Rate)을 계산하는 함수
 
-    치명률(CFR) = (사망 건수 / 해당 기기 총 보고 건수) × 100
+    치명률(CFR) = (사망 + 중증부상 건수 / 해당 기기 총 보고 건수) × 100
 
     Args:
         _lf: LazyFrame
         manufacturer_col: 제조사 컬럼명
         product_col: 제품군 컬럼명
-        event_column: 사건 유형 컬럼명
         date_col: 날짜 컬럼명
         selected_dates: 선택된 년-월 리스트
         selected_manufacturers: 선택된 제조사 리스트
@@ -299,24 +297,32 @@ def calculate_cfr_by_device(
         add_combo=True
     )
 
-    # 제조사-제품군 조합별 전체 건수와 사건 유형별 건수
+    # 제조사-제품군 조합별 전체 건수와 피해 등급별 건수 (patient_harm 기준)
     device_stats = (
         filtered_lf
         .group_by("manufacturer_product")
         .agg([
             pl.len().alias('total_cases'),
-            (pl.col(event_column) == 'Death').sum().alias('death_count'),
-            (pl.col(event_column) == 'Injury').sum().alias('injury_count'),
-            (pl.col(event_column) == 'Malfunction').sum().alias('malfunction_count')
+            # 사망 건수
+            (pl.col(ColumnNames.PATIENT_HARM) == 'Death').sum().alias('death_count'),
+            # 중증부상 건수
+            (pl.col(ColumnNames.PATIENT_HARM) == 'Serious Injury').sum().alias('serious_injury_count'),
+            # 경증부상 건수
+            (pl.col(ColumnNames.PATIENT_HARM) == 'Minor Injury').sum().alias('minor_injury_count'),
+            # 부상 없음
+            (pl.col(ColumnNames.PATIENT_HARM) == 'No Apparent Injury').sum().alias('no_harm_count'),
+            # 중증 피해 건수 (사망 + 중증부상)
+            pl.when(pl.col(ColumnNames.PATIENT_HARM).is_in(PatientHarmLevels.SERIOUS))
+              .then(1).otherwise(0).sum().alias('severe_harm_count')
         ])
         .filter(pl.col('total_cases') >= min_cases)  # 최소 건수 필터
         .with_columns([
-            # CFR 계산
-            (pl.col('death_count') / pl.col('total_cases') * 100).round(2).alias('cfr'),
-            # 부상률
-            (pl.col('injury_count') / pl.col('total_cases') * 100).round(2).alias('injury_rate'),
-            # 오작동률
-            (pl.col('malfunction_count') / pl.col('total_cases') * 100).round(2).alias('malfunction_rate')
+            # CFR 계산 (치명률 = 사망 + 중증부상)
+            (pl.col('severe_harm_count') / pl.col('total_cases') * 100).round(2).alias('cfr'),
+            # 경증부상률
+            (pl.col('minor_injury_count') / pl.col('total_cases') * 100).round(2).alias('minor_injury_rate'),
+            # 무해율
+            (pl.col('no_harm_count') / pl.col('total_cases') * 100).round(2).alias('no_harm_rate')
         ])
         .sort('cfr', descending=True)
     )
@@ -373,20 +379,27 @@ def perform_spike_detection(
         verbose=False
     )
 
-    # 앙상블 스파이크 탐지 (pattern이 이미 포함되어 있음)
+    # BaselineAggregator가 이미 pattern을 계산했음 (증가만 탐지)
+    # pattern은 이미 is_spike, is_spike_z, is_spike_p의 합으로 결정됨
     result_df = (
         baseline_lf
         .filter(pl.col("window") == window)
-        .with_columns(
+        .with_columns([
+            # 탐지 방법 수 계산
             (
                 pl.col("is_spike").cast(pl.Int8) +
                 pl.col("is_spike_z").cast(pl.Int8) +
                 pl.col("is_spike_p").cast(pl.Int8)
-            ).alias("n_methods")
-        )
-        .with_columns(
-            (pl.col("n_methods") >= min_methods).alias("is_spike_ensemble")
-        )
+            ).alias("n_methods"),
+            # 앙상블 급증 판정 (최소 방법 수 이상)
+            (
+                (
+                    pl.col("is_spike").cast(pl.Int8) +
+                    pl.col("is_spike_z").cast(pl.Int8) +
+                    pl.col("is_spike_p").cast(pl.Int8)
+                ) >= min_methods
+            ).alias("is_spike_ensemble")
+        ])
         .sort(["n_methods", "score_pois"], descending=True)
         .collect()
     )
@@ -403,49 +416,44 @@ def get_spike_time_series(
     date_col: str = ColumnNames.DATE_RECEIVED,
     window: int = 1,
 ) -> pl.DataFrame:
-    """특정 키워드들의 시계열 데이터 추출
+    """특정 키워드들의 시계열 데이터 추출 (BaselineAggregator 활용)
 
     Args:
         _lf: MAUDE 데이터 LazyFrame
         keywords: 키워드 리스트
         start_month: 시작 월 (예: "2024-01")
         end_month: 종료 월 (예: "2025-11")
-        date_col: 날짜 컬럼명
+        date_col: 날짜 컬럼명 (사용되지 않음, BaselineAggregator가 date_received 사용)
         window: 윈도우 크기 (기준 기간 계산용)
 
     Returns:
         시계열 데이터 DataFrame (columns: month, keyword, count, ratio)
-        ratio = 해당 월 count / 기준 기간(이전 12개월) 평균 count
+        ratio = 해당 월 count / 기준 기간 평균 count
     """
     from datetime import datetime
-    from dateutil.relativedelta import relativedelta
 
-    # 월별 키워드 집계
-    lf_with_month = _lf.with_columns(
-        pl.col(date_col).cast(pl.Date).dt.strftime("%Y-%m").alias("month")
-    )
+    # BaselineAggregator 초기화 (월별 집계 데이터 준비)
+    aggregator = BaselineAggregator(_lf)
+    aggregator._prepare_monthly_data()
 
-    # 키워드별 월별 집계 (전체 기간)
+    # 키워드별 월별 집계 데이터 가져오기
     keyword_monthly = (
-        lf_with_month
-        .filter(pl.col(ColumnNames.DEFECT_TYPE).is_in(keywords))
-        .group_by(["month", ColumnNames.DEFECT_TYPE])
-        .agg(pl.len().alias("count"))
-        .sort("month")
-        .collect()
+        aggregator._keyword_monthly
+        .filter(pl.col("keyword").is_in(keywords))
+        .rename({"n_reports": "count"})
     )
 
-    # 각 월별로 ratio 계산 (해당 월 / 이전 12개월 평균)
+    # 각 월별로 ratio 계산 (해당 월 / 기준 기간 평균)
     result_rows = []
 
     for keyword in keywords:
-        keyword_data = keyword_monthly.filter(pl.col(ColumnNames.DEFECT_TYPE) == keyword)
+        keyword_data = keyword_monthly.filter(pl.col("keyword") == keyword)
 
         for row in keyword_data.iter_rows(named=True):
             month = row["month"]
             count = row["count"]
 
-            # 이전 12개월 범위 계산
+            # 기준 기간 범위 계산
             current_date = datetime.strptime(month, "%Y-%m")
             base_end = current_date - relativedelta(months=window)
             base_start = base_end - relativedelta(months=11)
