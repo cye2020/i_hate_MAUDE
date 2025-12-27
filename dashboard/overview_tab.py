@@ -398,6 +398,22 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # Risk Matrix Analysis
     st.subheader("🔍 리스크 매트릭스")
 
+    # 설명 추가
+    with st.expander("ℹ️ 리스크 매트릭스란?", expanded=False):
+        st.markdown("""
+        **리스크 매트릭스**는 발생 빈도와 치명률을 동시에 고려하여 위험도를 평가하는 도구입니다.
+
+        **해석 방법**:
+        - **오른쪽 위**: 빈도 높음 + 치명률 높음 = **최고 위험**
+        - **오른쪽 아래**: 빈도 높음 + 치명률 낮음 = 모니터링 필요
+        - **왼쪽 위**: 빈도 낮음 + 치명률 높음 = 발생 시 심각
+        - **왼쪽 아래**: 빈도 낮음 + 치명률 낮음 = 낮은 위험
+
+        **인사이트**:
+        - 버블 크기가 클수록 해당 항목의 총 보고 건수가 많습니다
+        - 오른쪽 위 사분면의 항목들에 우선적으로 조치가 필요합니다
+        """)
+
     # Risk Matrix View Mode 선택
     risk_col1, risk_col2 = st.columns([3, 1])
 

@@ -111,6 +111,24 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
     st.markdown("### 🔍 개별 클러스터 상세 분석")
     st.caption("특정 클러스터의 환자 피해, 문제 부품, 시계열 추이를 분석합니다")
 
+    # 설명 추가
+    with st.expander("ℹ️ 개별 클러스터 분석이란?", expanded=False):
+        st.markdown("""
+        **개별 클러스터 분석**은 특정 클러스터(문제 유형 그룹)에 대한 상세 정보를 제공합니다.
+
+        **구성 요소**:
+        - **요약 메트릭**: 전체 케이스 수, 치명률(CFR), 사망/부상 통계
+        - **환자 피해 분포**: 사망, 중증/경증 부상, 부상 없음의 비율을 파이 차트로 표시
+        - **상위 문제 부품**: 해당 클러스터에서 가장 빈번하게 보고된 문제 부품 순위
+        - **시계열 추이**: 월별 케이스 수 변화를 통해 증가/감소 트렌드 파악
+
+        **인사이트**:
+        - 치명률이 높은 클러스터는 우선적으로 안전 조치가 필요합니다
+        - 특정 부품이 압도적으로 많이 보고된다면 해당 부품의 품질 개선이 시급합니다
+        - 시계열에서 급증하는 구간은 특정 사건이나 리콜과 연관될 수 있습니다
+        """)
+
+
     # 클러스터 선택 및 Top N 설정
     col1, col2 = st.columns([3, 1])
 
@@ -220,9 +238,15 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
                 # 소수점 2자리 표시 포맷 적용
                 if 'ratio' in top_components.columns:
                     st.dataframe(
-                        top_components.style.format({"ratio": "{:.2f}"}),
+                        top_components,
                         width='stretch',
-                        hide_index=True
+                        hide_index=True,
+                        column_config={
+                            "ratio": st.column_config.NumberColumn(
+                                "ratio",
+                                format="%.2f"
+                            )
+                        }
                     )
                 else:
                     st.dataframe(top_components, width='stretch', hide_index=True)
@@ -279,6 +303,23 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
     """클러스터 간 비교 분석"""
     st.markdown("### ⚖️ 클러스터 간 비교")
     st.caption("두 클러스터의 특성을 나란히 비교합니다")
+
+    # 설명 추가
+    with st.expander("ℹ️ 클러스터 비교란?", expanded=False):
+        st.markdown("""
+        **클러스터 비교**는 두 개의 클러스터(문제 유형 그룹)를 직접 대조하여 차이점을 분석합니다.
+
+        **비교 항목**:
+        - **핵심 메트릭**: 전체 케이스 수, 치명률, 사망/부상 건수 비교
+        - **환자 피해 분포**: 두 클러스터의 피해 심각도 패턴 차이
+        - **상위 문제 부품**: 각 클러스터에서 주로 보고되는 부품의 차이
+        - **시계열 추이**: 시간에 따른 보고 건수 변화 패턴 비교
+
+        **인사이트**:
+        - 케이스 수는 많지만 치명률이 낮은 클러스터 vs. 케이스는 적지만 치명률이 높은 클러스터를 구분할 수 있습니다
+        - 문제 부품이 겹치는 클러스터는 공통 원인이 있을 가능성이 있습니다
+        - 시계열 추이가 유사하다면 동일한 외부 요인(예: 리콜, 규제 변화)의 영향을 받을 수 있습니다
+        """)
 
     if len(available_clusters) < 2:
         st.warning("비교를 위해서는 최소 2개 이상의 클러스터가 필요합니다.")
@@ -420,9 +461,15 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
             comp_a_display = components_a.head(10)
             if 'ratio' in comp_a_display.columns:
                 st.dataframe(
-                    comp_a_display.style.format({"ratio": "{:.2f}"}),
+                    comp_a_display,
                     width='stretch',
-                    hide_index=True
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(
+                            "ratio",
+                            format="%.2f"
+                        )
+                    }
                 )
             else:
                 st.dataframe(comp_a_display, width='stretch', hide_index=True)
@@ -433,9 +480,15 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
             comp_b_display = components_b.head(10)
             if 'ratio' in comp_b_display.columns:
                 st.dataframe(
-                    comp_b_display.style.format({"ratio": "{:.2f}"}),
+                    comp_b_display,
                     width='stretch',
-                    hide_index=True
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(
+                            "ratio",
+                            format="%.2f"
+                        )
+                    }
                 )
             else:
                 st.dataframe(comp_b_display, width='stretch', hide_index=True)
@@ -447,6 +500,25 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
     """전체 클러스터 개요"""
     st.markdown("### 🌐 전체 클러스터 개요")
     st.caption("모든 클러스터의 전체적인 분포와 특성을 한눈에 확인합니다")
+
+    # 설명 추가
+    with st.expander("ℹ️ 전체 클러스터 개요란?", expanded=False):
+        st.markdown("""
+        **전체 클러스터 개요**는 모든 클러스터를 한눈에 비교하고 전체 패턴을 파악합니다.
+
+        **시각화 구성**:
+        - **클러스터별 케이스 분포**: 각 클러스터의 보고 건수를 막대 차트로 비교
+        - **클러스터별 치명률 비교**: CFR(사망+중증부상 비율)을 막대 차트로 표시
+        - **케이스 수 vs 치명률 산점도**: 보고 건수와 치명률의 관계를 버블 차트로 시각화 (버블 크기 = 사망 건수)
+        - **전체 통계 테이블**: 모든 클러스터의 주요 지표를 한 테이블에 정리
+
+        **인사이트**:
+        - 케이스 수가 많은 클러스터는 빈도가 높은 문제이므로 전반적인 품질 개선이 필요합니다
+        - 치명률이 높은 클러스터는 심각도가 높은 문제이므로 즉각적인 안전 조치가 필요합니다
+        - 산점도에서 오른쪽 위(고빈도+고위험)에 위치한 클러스터가 최우선 대응 대상입니다
+        - 왼쪽 위(저빈도+고위험)에 위치한 클러스터는 발생 시 치명적이므로 예방 조치가 중요합니다
+        """)
+
 
     # 모든 클러스터 데이터 수집
     with st.spinner("전체 클러스터 데이터 로딩 중..."):
@@ -574,9 +646,15 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
 
         # 소수점 2자리 표시 포맷 적용
         st.dataframe(
-            display_df.style.format({"치명률 (%)": "{:.2f}"}),
+            display_df,
             width='stretch',
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "치명률 (%)": st.column_config.NumberColumn(
+                    "치명률 (%)",
+                    format="%.2f"
+                )
+            }
         )
 
 

@@ -504,8 +504,12 @@ def create_spike_chart(
     for i, keyword in enumerate(keywords):
         keyword_data = ts_df.filter(pl.col("keyword") == keyword).sort("month")
 
+        # 월 문자열을 월 중간 날짜로 변환 (예: "2024-11" → "2024-11-15")
+        months = keyword_data["month"].to_list()
+        month_mid_dates = [f"{m}-15" for m in months]
+
         fig.add_trace(go.Scatter(
-            x=keyword_data["month"].to_list(),
+            x=month_mid_dates,
             y=keyword_data["ratio"].to_list(),
             mode='lines+markers',
             name=keyword,

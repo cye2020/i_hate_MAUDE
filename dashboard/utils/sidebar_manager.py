@@ -74,6 +74,7 @@ class SidebarManager:
         # 날짜 선택 UI (공통 key 사용으로 탭 전환 시에도 값 유지)
         with st.container():
             st.markdown("### 📅 기준 날짜")
+            st.info("📌 분석 기준이 되는 날짜를 선택합니다. 이 날짜를 기준으로 데이터를 필터링하고 집계합니다.")
             col1, col2 = st.columns(2)
 
             with col1:
@@ -82,7 +83,8 @@ class SidebarManager:
                     options=list(year_options),
                     index=min(default_year_index, len(list(year_options)) - 1),
                     format_func=lambda x: f"{x}년",
-                    key="common_year"  # 공통 key로 모든 탭에서 값 유지
+                    key="common_year",  # 공통 key로 모든 탭에서 값 유지
+                    help="분석할 년도를 선택하세요"
                 )
 
             with col2:
@@ -91,11 +93,11 @@ class SidebarManager:
                     options=range(1, 13),
                     index=default_month - 1,
                     format_func=lambda x: f"{x:02d}월",
-                    key="common_month"  # 공통 key로 모든 탭에서 값 유지
+                    key="common_month",  # 공통 key로 모든 탭에서 값 유지
+                    help="분석할 월을 선택하세요"
                 )
 
         selected_date = datetime(year, month, 1)
-        st.caption(f"선택: {selected_date.strftime('%Y년 %m월')}")
         st.markdown("---")
 
         return selected_date
@@ -134,7 +136,7 @@ class SidebarManager:
         key = filter_config.get("key")
         label = filter_config.get("label", "")
         args = filter_config.get("args", {})
-        caption_template = filter_config.get("caption")
+        # caption_template = filter_config.get("caption")  # 제거됨 - 상단 필터 배지로 대체
 
         # 동적 옵션이 제공되면 args의 options를 덮어씀
         if dynamic_options and key in dynamic_options:
@@ -149,6 +151,11 @@ class SidebarManager:
 
         # 라벨 렌더링
         st.markdown(f"### {label}")
+
+        # help 텍스트가 있으면 info로 표시
+        help_text = filter_config.get("help")
+        if help_text:
+            st.info(f"📌 {help_text}")
 
         # 위젯 타입별 렌더링
         selected_value = None
@@ -356,8 +363,8 @@ class SidebarManager:
                 start_date = datetime.combine(default_start, datetime.min.time())
                 end_date = datetime.combine(max_date, datetime.min.time())
 
-            # 선택된 기간 표시
-            st.caption(f"📅 {start_date.strftime('%Y-%m')} ~ {end_date.strftime('%Y-%m')}")
+            # 선택된 기간 표시 (제거됨 - 상단 필터 배지로 대체)
+            # st.caption(f"📅 {start_date.strftime('%Y-%m')} ~ {end_date.strftime('%Y-%m')}")
 
             selected_value = (start_date, end_date)
 
@@ -368,10 +375,10 @@ class SidebarManager:
             self.start_date = start_date
             self.end_date = end_date
 
-        # Caption 렌더링 (있는 경우)
-        if caption_template and selected_value is not None:
-            caption_text = self._apply_format_func(caption_template, selected_value)
-            st.caption(caption_text)
+        # Caption 렌더링 (제거됨 - 상단 필터 배지로 대체)
+        # if caption_template and selected_value is not None:
+        #     caption_text = self._apply_format_func(caption_template, selected_value)
+        #     st.caption(caption_text)
 
         st.markdown("---")
 
