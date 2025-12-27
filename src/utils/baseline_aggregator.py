@@ -272,8 +272,13 @@ class BaselineAggregator:
     def _add_ensemble_results(self, df: pl.DataFrame) -> pl.DataFrame:
         """앙상블 결과(pattern)를 추가합니다.
 
-        증가하지 않은 키워드(is_spike + is_spike_z + is_spike_p == 0)는
-        패턴을 null로 설정합니다.
+        - 3개 방법 모두 탐지 (증가만 가능) = severe
+        - 2개 방법 탐지 (증가만 가능) = alert
+        - 1개 방법 탐지 (증가만 가능) = attention
+        - 0개 방법 탐지 (증가/감소 모두 포함) = general
+
+        Note: is_spike, is_spike_z, is_spike_p는 모두 증가 조건을 포함하므로,
+              감소 키워드는 자동으로 3개 플래그가 모두 False가 되어 general로 분류됨
         """
         return df.with_columns(
             pl.when(
@@ -291,12 +296,7 @@ class BaselineAggregator:
                 pl.col("is_spike_z").cast(pl.Int8) +
                 pl.col("is_spike_p").cast(pl.Int8) == 1
             ).then(pl.lit("attention"))
-            .when(
-                pl.col("is_spike").cast(pl.Int8) +
-                pl.col("is_spike_z").cast(pl.Int8) +
-                pl.col("is_spike_p").cast(pl.Int8) == 0
-            ).then(pl.lit(None))  # 패턴 없음
-            .otherwise(pl.lit("general"))  # 혹시 모를 예외 케이스
+            .otherwise(pl.lit("general"))  # 나머지 모두 일반 (증가/감소/동일)
             .alias("pattern")
         )
     
