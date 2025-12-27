@@ -378,9 +378,39 @@ def cluster_check(
         .collect()
     )
 
+    # 5. Defect Type 분포 (상위 N개)
+    defect_type_df = (
+        cluster_lf
+        .filter(pl.col(ColumnNames.DEFECT_TYPE).is_not_null())
+        .filter(pl.col(ColumnNames.DEFECT_TYPE) != "")
+        .group_by(ColumnNames.DEFECT_TYPE)
+        .agg(pl.len().alias('count'))
+        .sort('count', descending=True)
+        .head(top_n)
+        .with_columns(
+            (pl.col('count') / total_count * 100).round(2).alias('ratio')
+        )
+        .collect()
+    )
+
+    # 6. Defect Confirmed 분포
+    defect_confirmed_df = (
+        cluster_lf
+        .filter(pl.col(ColumnNames.DEFECT_CONFIRMED).is_not_null())
+        .group_by(ColumnNames.DEFECT_CONFIRMED)
+        .agg(pl.len().alias('count'))
+        .sort('count', descending=True)
+        .with_columns(
+            (pl.col('count') / total_count * 100).round(2).alias('ratio')
+        )
+        .collect()
+    )
+
     return {
         'harm_summary': event_dict,
         'top_components': top_components_df,
         'total_count': total_count,
-        'time_series': time_series_df
+        'time_series': time_series_df,
+        'defect_types': defect_type_df,
+        'defect_confirmed': defect_confirmed_df
     }

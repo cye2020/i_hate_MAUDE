@@ -176,7 +176,7 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
 
     with col2:
         top_n = st.number_input(
-            "상위 부품 개수",
+            "Top N 개수",
             min_value=5,
             max_value=50,
             value=Defaults.TOP_N,
@@ -290,7 +290,96 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
 
     st.markdown("---")
 
-    # ==================== 3. 시계열 분석 ====================
+    # ==================== 3. 결함 유형 및 결함 확정 분포 ====================
+    col_defect, col_confirmed = st.columns([1, 1])
+
+    with col_defect:
+        st.markdown(f"#### 🔍 상위 {top_n}개 {Terms.KOREAN.DEFECT_TYPE}")
+
+        defect_types = cluster_data['defect_types']
+
+        if len(defect_types) > 0:
+            fig_defect = px.bar(
+                defect_types.to_pandas(),
+                x='count',
+                y=ColumnNames.DEFECT_TYPE,
+                orientation='h',
+                text='ratio',
+                labels={ColumnNames.DEFECT_TYPE: Terms.KOREAN.DEFECT_TYPE, 'count': Terms.KOREAN.REPORT_COUNT},
+                color='count',
+                color_continuous_scale='Oranges'
+            )
+
+            fig_defect.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig_defect.update_layout(
+                height=400,
+                showlegend=False,
+                yaxis={'categoryorder': 'total ascending'},
+                margin=dict(l=20, r=20, t=20, b=20)
+            )
+
+            st.plotly_chart(fig_defect, width='stretch', config={'displayModeBar': False})
+
+            with st.expander("📋 상세 데이터"):
+                st.dataframe(
+                    defect_types,
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                    }
+                )
+        else:
+            st.info(f"{Terms.KOREAN.DEFECT_TYPE} 데이터가 없습니다.")
+
+    with col_confirmed:
+        st.markdown(f"#### ✅ {Terms.KOREAN.DEFECT_CONFIRMED} 분포")
+
+        defect_confirmed = cluster_data['defect_confirmed']
+
+        if len(defect_confirmed) > 0:
+            # 파이 차트로 표시
+            fig_confirmed = px.pie(
+                defect_confirmed.to_pandas(),
+                names=ColumnNames.DEFECT_CONFIRMED,
+                values='count',
+                color=ColumnNames.DEFECT_CONFIRMED,
+                color_discrete_map={
+                    'Yes': ChartStyles.DANGER_COLOR,
+                    'No': ChartStyles.SUCCESS_COLOR,
+                    'Unknown': '#CCCCCC'
+                }
+            )
+
+            fig_confirmed.update_traces(
+                textposition='inside',
+                textinfo='percent+label',
+                hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
+            )
+
+            fig_confirmed.update_layout(
+                height=400,
+                margin=dict(l=20, r=20, t=20, b=20),
+                showlegend=True
+            )
+
+            st.plotly_chart(fig_confirmed, width='stretch', config={'displayModeBar': False})
+
+            with st.expander("📋 상세 데이터"):
+                st.dataframe(
+                    defect_confirmed,
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                    }
+                )
+        else:
+            st.info(f"{Terms.KOREAN.DEFECT_CONFIRMED} 데이터가 없습니다.")
+
+    st.markdown("---")
+
+    # ==================== 4. 시계열 분석 ====================
     st.markdown("#### 📈 월별 발생 추이")
 
     time_series = cluster_data['time_series']
@@ -385,7 +474,7 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
         st.warning("⚠️ 서로 다른 클러스터를 선택해주세요")
         return
 
-    top_n = st.slider("상위 부품 개수", 5, 20, 10, key="compare_top_n")
+    top_n = st.slider("Top N 개수", 5, 20, 10, key="compare_top_n")
 
     st.markdown("---")
 
@@ -534,6 +623,110 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
     else:
         st.info("부품 데이터가 부족합니다.")
 
+    st.markdown("---")
+
+    # ==================== 4. 결함 유형 비교 ====================
+    st.markdown(f"#### 🔍 {Terms.KOREAN.DEFECT_TYPE} 비교")
+
+    defect_a = data_a['defect_types'].to_pandas()
+    defect_b = data_b['defect_types'].to_pandas()
+
+    if len(defect_a) > 0 and len(defect_b) > 0:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(f"**Cluster {cluster_a} 상위 {Terms.KOREAN.DEFECT_TYPE}**")
+            defect_a_display = defect_a.head(10)
+            if 'ratio' in defect_a_display.columns:
+                st.dataframe(
+                    defect_a_display,
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                    }
+                )
+            else:
+                st.dataframe(defect_a_display, width='stretch', hide_index=True)
+
+        with col2:
+            st.markdown(f"**Cluster {cluster_b} 상위 {Terms.KOREAN.DEFECT_TYPE}**")
+            defect_b_display = defect_b.head(10)
+            if 'ratio' in defect_b_display.columns:
+                st.dataframe(
+                    defect_b_display,
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                    }
+                )
+            else:
+                st.dataframe(defect_b_display, width='stretch', hide_index=True)
+    else:
+        st.info(f"{Terms.KOREAN.DEFECT_TYPE} 데이터가 부족합니다.")
+
+    st.markdown("---")
+
+    # ==================== 5. 결함 확정 비교 ====================
+    st.markdown(f"#### ✅ {Terms.KOREAN.DEFECT_CONFIRMED} 비교")
+
+    confirmed_a = data_a['defect_confirmed'].to_pandas()
+    confirmed_b = data_b['defect_confirmed'].to_pandas()
+
+    if len(confirmed_a) > 0 and len(confirmed_b) > 0:
+        fig_confirmed = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=(f"Cluster {cluster_a}", f"Cluster {cluster_b}"),
+            specs=[[{"type": "pie"}, {"type": "pie"}]]
+        )
+
+        # Cluster A
+        fig_confirmed.add_trace(go.Pie(
+            labels=confirmed_a[ColumnNames.DEFECT_CONFIRMED],
+            values=confirmed_a['count'],
+            name=f"Cluster {cluster_a}",
+            marker=dict(colors=['#d62728', '#2ca02c', '#CCCCCC'])
+        ), row=1, col=1)
+
+        # Cluster B
+        fig_confirmed.add_trace(go.Pie(
+            labels=confirmed_b[ColumnNames.DEFECT_CONFIRMED],
+            values=confirmed_b['count'],
+            name=f"Cluster {cluster_b}",
+            marker=dict(colors=['#d62728', '#2ca02c', '#CCCCCC'])
+        ), row=1, col=2)
+
+        fig_confirmed.update_layout(height=400, showlegend=True)
+        st.plotly_chart(fig_confirmed, width='stretch', config={'displayModeBar': False})
+
+        # 비율 비교 테이블
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(f"**Cluster {cluster_a} {Terms.KOREAN.RATIO}**")
+            st.dataframe(
+                confirmed_a,
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                }
+            )
+
+        with col2:
+            st.markdown(f"**Cluster {cluster_b} {Terms.KOREAN.RATIO}**")
+            st.dataframe(
+                confirmed_b,
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    "ratio": st.column_config.NumberColumn(f"{Terms.KOREAN.RATIO} (%)", format="%.2f")
+                }
+            )
+    else:
+        st.info(f"{Terms.KOREAN.DEFECT_CONFIRMED} 데이터가 부족합니다.")
+
 
 def render_cluster_overview(lf, available_clusters, selected_dates, year_month_expr, manufacturers, products):
     """전체 클러스터 개요"""
@@ -574,13 +767,22 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
                 products=tuple(products) if products else ()
             )
 
+            # Defect Confirmed 통계
+            defect_confirmed = data['defect_confirmed']
+            confirmed_yes = defect_confirmed.filter(pl.col(ColumnNames.DEFECT_CONFIRMED) == 'Yes')['count'].sum() if len(defect_confirmed) > 0 else 0
+            confirmed_no = defect_confirmed.filter(pl.col(ColumnNames.DEFECT_CONFIRMED) == 'No')['count'].sum() if len(defect_confirmed) > 0 else 0
+            confirmed_unknown = defect_confirmed.filter(pl.col(ColumnNames.DEFECT_CONFIRMED) == 'Unknown')['count'].sum() if len(defect_confirmed) > 0 else 0
+
             all_cluster_data.append({
                 'cluster': cluster_id,
                 'total_count': data['total_count'],
                 'deaths': data['harm_summary']['total_deaths'],
                 'serious_injuries': data['harm_summary']['total_serious_injuries'],
                 'minor_injuries': data['harm_summary']['total_minor_injuries'],
-                'no_harm': data['harm_summary']['total_no_injuries']
+                'no_harm': data['harm_summary']['total_no_injuries'],
+                'defect_confirmed_yes': confirmed_yes,
+                'defect_confirmed_no': confirmed_no,
+                'defect_confirmed_unknown': confirmed_unknown
             })
 
     overview_df = pd.DataFrame(all_cluster_data)
@@ -670,11 +872,75 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
     fig_cfr.update_layout(height=400)
     st.plotly_chart(fig_cfr, width='stretch', config={'displayModeBar': False})
 
+    st.markdown("---")
+
+    # ==================== 4. 클러스터별 결함 확정 분포 ====================
+    st.markdown(f"#### ✅ 클러스터별 {Terms.KOREAN.DEFECT_CONFIRMED} 분포")
+
+    # 결함 확정률 계산
+    overview_df['defect_confirmed_rate'] = (
+        (overview_df['defect_confirmed_yes'] / overview_df['total_count'] * 100).round(2)
+    )
+
+    fig_defect_confirmed = go.Figure()
+
+    fig_defect_confirmed.add_trace(go.Bar(
+        name='Yes (확정)',
+        x=overview_df['cluster_label'],
+        y=overview_df['defect_confirmed_yes'],
+        marker_color=ChartStyles.DANGER_COLOR
+    ))
+
+    fig_defect_confirmed.add_trace(go.Bar(
+        name='No (미확정)',
+        x=overview_df['cluster_label'],
+        y=overview_df['defect_confirmed_no'],
+        marker_color=ChartStyles.SUCCESS_COLOR
+    ))
+
+    fig_defect_confirmed.add_trace(go.Bar(
+        name='Unknown',
+        x=overview_df['cluster_label'],
+        y=overview_df['defect_confirmed_unknown'],
+        marker_color='#CCCCCC'
+    ))
+
+    fig_defect_confirmed.update_layout(
+        barmode='stack',
+        xaxis_title="클러스터",
+        yaxis_title="케이스 수",
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    st.plotly_chart(fig_defect_confirmed, width='stretch', config={'displayModeBar': False})
+
+    # 확정률 차트
+    st.markdown("#### 📊 클러스터별 결함 확정률")
+
+    fig_confirmed_rate = px.bar(
+        overview_df,
+        x='cluster_label',
+        y='defect_confirmed_rate',
+        text='defect_confirmed_rate',
+        labels={'cluster_label': '클러스터', 'defect_confirmed_rate': '확정률 (%)'},
+        color='defect_confirmed_rate',
+        color_continuous_scale='Reds'
+    )
+
+    fig_confirmed_rate.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+    fig_confirmed_rate.update_layout(height=400, showlegend=False)
+
+    st.plotly_chart(fig_confirmed_rate, width='stretch', config={'displayModeBar': False})
+
+    st.markdown("---")
+
     # 요약 테이블
     with st.expander("📋 전체 클러스터 요약 테이블"):
         display_df = overview_df[[
             'cluster_label', 'total_count', 'deaths',
-            'serious_injuries', 'minor_injuries', 'no_harm', 'cfr'
+            'serious_injuries', 'minor_injuries', 'no_harm', 'cfr',
+            'defect_confirmed_yes', 'defect_confirmed_rate'
         ]].rename(columns={
             'cluster_label': '클러스터',
             'total_count': '전체 케이스',
@@ -682,7 +948,9 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
             'serious_injuries': '중증 부상',
             'minor_injuries': '경증 부상',
             'no_harm': '부상 없음',
-            'cfr': '치명률 (%)'
+            'cfr': '치명률 (%)',
+            'defect_confirmed_yes': '결함 확정',
+            'defect_confirmed_rate': '확정률 (%)'
         })
 
         # 소수점 2자리 표시 포맷 적용
@@ -691,10 +959,8 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
             width='stretch',
             hide_index=True,
             column_config={
-                "치명률 (%)": st.column_config.NumberColumn(
-                    "치명률 (%)",
-                    format="%.2f"
-                )
+                "치명률 (%)": st.column_config.NumberColumn("치명률 (%)", format="%.2f"),
+                "확정률 (%)": st.column_config.NumberColumn("확정률 (%)", format="%.2f")
             }
         )
 
