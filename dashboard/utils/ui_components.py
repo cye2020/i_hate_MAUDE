@@ -219,12 +219,120 @@ def convert_date_range_to_months(date_range: Optional[Tuple]) -> List[str]:
 
 # ==================== 차트 생성 ====================
 
+def create_pie_chart(
+    data: Dict[str, int] = None,
+    labels: List[str] = None,
+    values: List[int] = None,
+    colors: List[str] = None,
+    height: int = 400,
+    show_legend: bool = True,
+    hole: float = 0.4,
+    textinfo: str = 'label+percent',
+    texttemplate: str = '%{label}<br>%{percent}'
+) -> Optional[go.Figure]:
+    """범용 파이/도넛 차트 생성 (공통)
+
+    Args:
+        data: 딕셔너리 형식의 데이터 {label: value, ...}
+              labels/values와 상호 배타적
+        labels: 라벨 리스트 (data 대신 사용 가능)
+        values: 값 리스트 (data 대신 사용 가능)
+        colors: 색상 리스트 (선택, 없으면 기본 색상 사용)
+        height: 차트 높이 (px)
+        show_legend: 범례 표시 여부
+        hole: 도넛 구멍 크기 (0: 파이 차트, 0~1: 도넛 차트)
+        textinfo: 텍스트 정보 표시 ('label+percent', 'value', etc.)
+        texttemplate: 텍스트 템플릿
+
+    Returns:
+        Plotly Figure 객체 또는 None (데이터 없을 때)
+
+    Examples:
+        >>> # 방법 1: 딕셔너리로 전달
+        >>> data = {'Category A': 100, 'Category B': 200, 'Category C': 150}
+        >>> fig = create_pie_chart(data=data)
+
+        >>> # 방법 2: 리스트로 전달
+        >>> labels = ['A', 'B', 'C']
+        >>> values = [100, 200, 150]
+        >>> colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+        >>> fig = create_pie_chart(labels=labels, values=values, colors=colors)
+    """
+    # 데이터 파싱
+    original_labels = None
+    if data is not None:
+        # 딕셔너리 형식
+        original_labels = list(data.keys())
+        filtered_data = [(k, v) for k, v in data.items() if v > 0]
+        if not filtered_data:
+            return None
+        labels = [item[0] for item in filtered_data]
+        values = [item[1] for item in filtered_data]
+    elif labels is not None and values is not None:
+        # 리스트 형식
+        original_labels = labels.copy()
+        original_values = values.copy()
+        filtered_pairs = [(l, v, i) for i, (l, v) in enumerate(zip(labels, values)) if v > 0]
+        if not filtered_pairs:
+            return None
+        labels = [item[0] for item in filtered_pairs]
+        values = [item[1] for item in filtered_pairs]
+        original_indices = [item[2] for item in filtered_pairs]
+    else:
+        return None
+
+    # 색상이 지정되지 않으면 기본 색상 사용
+    if colors is None:
+        default_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+                         '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6']
+        colors = [default_colors[i % len(default_colors)] for i in range(len(labels))]
+    else:
+        # 색상 필터링 (값이 0인 항목 제거에 따라)
+        if data is not None:
+            # 딕셔너리 형식
+            filtered_keys = [k for k, v in data.items() if v > 0]
+            colors = [colors[list(data.keys()).index(k)] for k in filtered_keys]
+        else:
+            # 리스트 형식 - 원본 인덱스 기반으로 색상 매핑
+            colors = [colors[i] for i in original_indices]
+
+    # 파이 차트 생성
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=hole,
+        marker=dict(
+            colors=colors,
+            line=dict(color='#FFFFFF', width=2)
+        ),
+        textinfo=textinfo,
+        texttemplate=texttemplate,
+        hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
+    )])
+
+    # 레이아웃
+    fig.update_layout(
+        height=height,
+        margin=dict(l=20, r=20, t=20, b=20),
+        showlegend=show_legend,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05
+        ) if show_legend else None
+    )
+
+    return fig
+
+
 def create_harm_pie_chart(
     harm_summary: Dict[str, int],
     height: int = 400,
     show_legend: bool = True
 ) -> Optional[go.Figure]:
-    """환자 피해 분포 파이 차트 생성 (공통)
+    """환자 피해 분포 파이 차트 생성 (호환성 래퍼)
 
     Args:
         harm_summary: 피해 요약 딕셔너리
@@ -249,54 +357,79 @@ def create_harm_pie_chart(
         >>> fig = create_harm_pie_chart(harm_summary)
         >>> st.plotly_chart(fig)
     """
-    # 데이터 준비
-    harm_data = [
-        ('사망', harm_summary.get('total_deaths', 0), HarmColors.DEATH),
-        ('중증 부상', harm_summary.get('total_serious_injuries', 0), HarmColors.SERIOUS_INJURY),
-        ('경증 부상', harm_summary.get('total_minor_injuries', 0), HarmColors.MINOR_INJURY),
-        ('부상 없음', harm_summary.get('total_no_injuries', 0), HarmColors.NO_HARM),
-        ('Unknown', harm_summary.get('total_unknown', 0), HarmColors.UNKNOWN)
+    # 라벨, 값, 색상 준비
+    labels = ['사망', '중증 부상', '경증 부상', '부상 없음', 'Unknown']
+    values = [
+        harm_summary.get('total_deaths', 0),
+        harm_summary.get('total_serious_injuries', 0),
+        harm_summary.get('total_minor_injuries', 0),
+        harm_summary.get('total_no_injuries', 0),
+        harm_summary.get('total_unknown', 0)
+    ]
+    colors = [
+        HarmColors.DEATH,
+        HarmColors.SERIOUS_INJURY,
+        HarmColors.MINOR_INJURY,
+        HarmColors.NO_HARM,
+        HarmColors.UNKNOWN
     ]
 
-    # 0보다 큰 값만 필터링
-    filtered_data = [(label, value, color) for label, value, color in harm_data if value > 0]
-
-    if not filtered_data:
-        return None
-
-    labels = [item[0] for item in filtered_data]
-    values = [item[1] for item in filtered_data]
-    colors = [item[2] for item in filtered_data]
-
-    # 파이 차트 생성
-    fig = go.Figure(data=[go.Pie(
+    return create_pie_chart(
         labels=labels,
         values=values,
-        hole=0.4,  # 도넛 차트
-        marker=dict(
-            colors=colors,
-            line=dict(color='#FFFFFF', width=2)
-        ),
-        textinfo='label+percent',
-        texttemplate='%{label}<br>%{percent}',
-        hovertemplate='<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>'
-    )])
-
-    # 레이아웃
-    fig.update_layout(
+        colors=colors,
         height=height,
-        margin=dict(l=20, r=20, t=20, b=20),
-        showlegend=show_legend,
-        legend=dict(
-            orientation="v",
-            yanchor="middle",
-            y=0.5,
-            xanchor="left",
-            x=1.05
-        ) if show_legend else None
+        show_legend=show_legend
     )
 
-    return fig
+
+def create_defect_confirmed_pie_chart(
+    defect_confirmed_df: pl.DataFrame,
+    defect_col: str = 'defect_confirmed',
+    count_col: str = 'count',
+    height: int = 400,
+    show_legend: bool = True
+) -> Optional[go.Figure]:
+    """결함 확정 분포 파이 차트 생성 (전용)
+
+    Args:
+        defect_confirmed_df: 결함 확정 데이터 DataFrame
+        defect_col: 결함 확정 컬럼명
+        count_col: 건수 컬럼명
+        height: 차트 높이 (px)
+        show_legend: 범례 표시 여부
+
+    Returns:
+        Plotly Figure 객체 또는 None (데이터 없을 때)
+
+    Example:
+        >>> fig = create_defect_confirmed_pie_chart(defect_confirmed_df)
+        >>> st.plotly_chart(fig)
+    """
+    if defect_confirmed_df is None or len(defect_confirmed_df) == 0:
+        return None
+
+    # 데이터 추출
+    labels = defect_confirmed_df[defect_col].to_list()
+    values = defect_confirmed_df[count_col].to_list()
+
+    # 색상 매핑
+    color_map = {
+        '결함 있음': ChartStyles.DANGER_COLOR,
+        '결함 없음': ChartStyles.SUCCESS_COLOR,
+        '알 수 없음': '#CCCCCC'
+    }
+    colors = [color_map.get(label, '#808080') for label in labels]
+
+    return create_pie_chart(
+        labels=labels,
+        values=values,
+        colors=colors,
+        height=height,
+        show_legend=show_legend,
+        textinfo='percent+label',
+        texttemplate='%{label}<br>%{percent}'
+    )
 
 
 def create_component_bar_chart(

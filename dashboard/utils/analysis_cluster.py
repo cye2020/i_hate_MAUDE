@@ -393,10 +393,20 @@ def cluster_check(
         .collect()
     )
 
-    # 6. Defect Confirmed 분포
+    # 6. Defect Confirmed 분포 (한글로 매핑)
     defect_confirmed_df = (
         cluster_lf
         .filter(pl.col(ColumnNames.DEFECT_CONFIRMED).is_not_null())
+        .with_columns(
+            pl.when(pl.col(ColumnNames.DEFECT_CONFIRMED).eq(True))
+            .then(pl.lit('결함 있음'))
+            .when(pl.col(ColumnNames.DEFECT_CONFIRMED).eq(False))
+            .then(pl.lit('결함 없음'))
+            .when(pl.col(ColumnNames.DEFECT_CONFIRMED) == 'Unknown')
+            .then(pl.lit('알 수 없음'))
+            .otherwise(pl.col(ColumnNames.DEFECT_CONFIRMED))
+            .alias(ColumnNames.DEFECT_CONFIRMED)
+        )
         .group_by(ColumnNames.DEFECT_CONFIRMED)
         .agg(pl.len().alias('count'))
         .sort('count', descending=True)
