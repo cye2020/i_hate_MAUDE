@@ -349,11 +349,13 @@ def perform_spike_detection(
     alpha: float = 0.05,
     correction: str = 'fdr_bh',
     min_methods: int = 2,
+    manufacturers: tuple = None,
+    products: tuple = None,
 ) -> pl.DataFrame:
     """스파이크 탐지 분석 수행
 
     Args:
-        _lf: MAUDE 데이터 LazyFrame
+        _lf: MAUDE 데이터 LazyFrame (이미 공통 필터 적용됨)
         as_of_month: 기준 월 (예: "2025-11")
         window: 윈도우 크기 (1 또는 3)
         min_c_recent: 최소 최근 케이스 수
@@ -362,6 +364,8 @@ def perform_spike_detection(
         alpha: 유의수준 (Poisson 검정용)
         correction: 다중검정 보정 방법 ('bonferroni', 'sidak', 'fdr_bh', None)
         min_methods: 앙상블 스파이크 판정 최소 방법 수
+        manufacturers: 제조사 필터 (캐시 키용)
+        products: 제품군 필터 (캐시 키용)
 
     Returns:
         스파이크 탐지 결과 DataFrame (pattern 컬럼 포함)
@@ -493,19 +497,19 @@ def get_spike_time_series(
 @st.cache_data(show_spinner=False)
 def calculate_big_numbers(
     _data: pl.LazyFrame,
-    segment: Optional[str] = None,
-    segment_value: Optional[str] = None,
     start_date = None,
     end_date = None,
+    manufacturers: tuple = None,
+    products: tuple = None,
 ) -> dict:
     """Big Number 4개 계산 (선택된 기간 전체 vs 그 이전 동일 기간 슬라이딩 비교)
 
     Args:
-        _data: LazyFrame 데이터
-        segment: 세그먼트 컬럼명 (필터링할 컬럼)
-        segment_value: 세그먼트 값 (특정 제조사, 제품 등)
+        _data: LazyFrame 데이터 (이미 공통 필터 적용됨)
         start_date: 분석 시작 날짜 (datetime 객체)
         end_date: 분석 종료 날짜 (datetime 객체)
+        manufacturers: 제조사 필터 (캐시 키용)
+        products: 제품군 필터 (캐시 키용)
 
     Returns:
         {
@@ -524,9 +528,6 @@ def calculate_big_numbers(
         - 현재 기간: 2024-01 ~ 2025-12
         - 이전 기간: 2022-01 ~ 2023-12 (24개월 전으로 슬라이딩)
     """
-    # Segment 필터 적용
-    if segment and segment_value:
-        _data = _data.filter(pl.col(segment) == segment_value)
 
     # 날짜 범위가 지정되지 않은 경우 전체 데이터에서 최신 날짜 기준
     if not start_date or not end_date:
@@ -753,21 +754,21 @@ def get_risk_matrix_data(
     _lf: pl.LazyFrame,
     start_date = None,
     end_date = None,
-    segment_col: Optional[str] = None,
-    segment_value: Optional[str] = None,
     view_mode: str = "defect_type",
-    top_n: int = 20
+    top_n: int = 20,
+    manufacturers: tuple = None,
+    products: tuple = None,
 ) -> pl.DataFrame:
     """Risk Matrix용 데이터 집계
 
     Args:
-        _lf: LazyFrame 데이터
+        _lf: LazyFrame 데이터 (이미 공통 필터 적용됨)
         start_date: 시작 날짜 (datetime 객체)
         end_date: 종료 날짜 (datetime 객체)
-        segment_col: 세그먼트 컬럼명
-        segment_value: 세그먼트 값
         view_mode: "defect_type", "manufacturer", "product"
         top_n: 상위 N개만 표시
+        manufacturers: 제조사 필터 (캐시 키용)
+        products: 제품군 필터 (캐시 키용)
 
     Returns:
         DataFrame (entity, report_count, severe_harm_rate, defect_confirmed_rate)
@@ -783,23 +784,14 @@ def get_risk_matrix_data(
     # view_mode에 따라 group_by 컬럼 결정
     if view_mode == "defect_type":
         group_col = ColumnNames.DEFECT_TYPE
-        # 세그먼트 필터 적용
-        if segment_col and segment_value:
-            filtered_data = filtered_data.filter(pl.col(segment_col) == segment_value)
         # exclude 필터
         filtered_data = filtered_data.filter(~pl.col(group_col).is_in(Defaults.EXCLUDE_DEFECT_TYPES))
 
     elif view_mode == "manufacturer":
         group_col = ColumnNames.MANUFACTURER
-        # 특정 제품코드의 제조사들 비교
-        if segment_value:
-            filtered_data = filtered_data.filter(pl.col(ColumnNames.PRODUCT_CODE) == segment_value)
 
     elif view_mode == "product":
         group_col = ColumnNames.PRODUCT_CODE
-        # 특정 제조사의 제품들 비교
-        if segment_value:
-            filtered_data = filtered_data.filter(pl.col(ColumnNames.MANUFACTURER) == segment_value)
 
     else:
         group_col = ColumnNames.DEFECT_TYPE

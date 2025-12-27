@@ -180,6 +180,7 @@ def get_patient_harm_summary(
     selected_dates: Optional[List[str]] = None,
     selected_manufacturers: Optional[List[str]] = None,
     selected_products: Optional[List[str]] = None,
+    selected_defect_types: Optional[List[str]] = None,
     _year_month_expr: Optional[pl.Expr] = None
 ) -> dict:
     """환자 피해 분포 계산 (파이 차트용)
@@ -191,6 +192,7 @@ def get_patient_harm_summary(
         selected_dates: 선택된 년-월 리스트
         selected_manufacturers: 선택된 제조사 리스트
         selected_products: 선택된 제품군 리스트
+        selected_defect_types: 선택된 결함 유형 리스트
         _year_month_expr: 년-월 컬럼 생성 표현식
 
     Returns:
@@ -213,6 +215,10 @@ def get_patient_harm_summary(
         year_month_expr=_year_month_expr,
         add_combo=False
     )
+
+    # defect_type 필터 추가
+    if selected_defect_types:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.DEFECT_TYPE).is_in(selected_defect_types))
 
     # 환자 피해별 집계 (No Harm과 No Apparent Injury 모두 체크)
     result = filtered_lf.select([
@@ -253,7 +259,9 @@ def cluster_check(
     selected_manufacturers: Optional[List[str]] = None,
     selected_products: Optional[List[str]] = None,
     top_n: int = Defaults.TOP_N,
-    _year_month_expr: Optional[pl.Expr] = None
+    _year_month_expr: Optional[pl.Expr] = None,
+    manufacturers: tuple = None,  # Cache key parameter
+    products: tuple = None,       # Cache key parameter
 ) -> dict:
     """클러스터별로 분포와 top_n problem_component 차트를 확인
 

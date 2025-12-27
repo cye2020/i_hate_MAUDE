@@ -52,6 +52,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
     date_range = filters.get("date_range")  # (start, end) tuple
     manufacturers = filters.get("manufacturers", [])
     products = filters.get("products", [])
+    devices = filters.get("devices", [])
+    clusters = filters.get("clusters", [])
+    defect_types = filters.get("defect_types", [])
     top_n = filters.get("top_n", Defaults.TOP_N)
     min_cases = filters.get("min_cases", Defaults.MIN_CASES)
 
@@ -62,7 +65,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     render_bookmark_manager(
         tab_name="eda",
         current_filters=filters,
-        filter_keys=["date_range", "manufacturers", "products", "top_n", "min_cases"]
+        filter_keys=["date_range", "manufacturers", "products", "devices", "clusters", "defect_types", "top_n", "min_cases"]
     )
 
     # ==================== 필터 요약 배지 (공통 함수 사용) ====================
@@ -70,6 +73,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
         date_range=date_range,
         manufacturers=manufacturers,
         products=products,
+        devices=devices,
+        clusters=clusters,
+        defect_types=defect_types,
         top_n=top_n,
         min_cases=min_cases
     )
@@ -92,6 +98,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
             selected_dates,
             manufacturers,
             products,
+            devices,
+            clusters,
+            defect_types,
             year_month_expr,
             min_cases
         )
@@ -103,6 +112,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
             selected_dates,
             manufacturers,
             products,
+            devices,
+            clusters,
+            defect_types,
             top_n,
             year_month_expr
         )
@@ -115,19 +127,10 @@ def show(filters=None, lf: pl.LazyFrame = None):
             selected_dates,
             manufacturers,
             products,
+            devices,
+            clusters,
+            defect_types,
             year_month_expr
-        )
-
-        # ==================== 문제 부품 분석 ====================
-        st.markdown("---")
-        render_component_analysis(
-            lf,
-            date_col,
-            selected_dates,
-            manufacturers,
-            products,
-            year_month_expr,
-            top_n
         )
 
         # ==================== 기기별 치명률(CFR) 분석 ====================
@@ -138,6 +141,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
             selected_dates,
             manufacturers,
             products,
+            devices,
+            clusters,
+            defect_types,
             year_month_expr,
             min_cases,
             top_n
@@ -151,6 +157,9 @@ def show(filters=None, lf: pl.LazyFrame = None):
             selected_dates,
             manufacturers,
             products,
+            devices,
+            clusters,
+            defect_types,
             year_month_expr
         )
 
@@ -165,10 +174,13 @@ def render_smart_insights(
     selected_dates,
     manufacturers,
     products,
+    devices,
+    clusters,
+    defect_types,
     year_month_expr,
     min_cases
 ):
-    """스마트 인사이트: 자동 이상 감지 및 주요 발견사항
+    """스마트 인사이트: 자동 이상 감지 및 주요 발견사항 (하이브리드 필터 적용)
 
     Args:
         lf: LazyFrame
@@ -176,6 +188,9 @@ def render_smart_insights(
         selected_dates: 현재 기간 (년-월 리스트)
         manufacturers: 선택된 제조사 리스트
         products: 선택된 제품 리스트
+        devices: 선택된 기기 리스트
+        clusters: 선택된 클러스터 리스트
+        defect_types: 선택된 결함 유형 리스트
         year_month_expr: 년-월 표현식
         min_cases: 최소 케이스 수
     """
@@ -186,12 +201,13 @@ def render_smart_insights(
 
     with st.spinner("인사이트 생성 중..."):
         # ==================== 1. 상위 보고 제품 ====================
+        # 제품 분포: products 제외, 나머지 필터 적용
         top_product_df = get_filtered_products(
             lf,
             date_col=date_col,
             selected_dates=selected_dates,
             selected_manufacturers=manufacturers if manufacturers else None,
-            selected_products=products if products else None,
+            selected_products=None,  # 제품 분포를 보기 위해 제외
             top_n=1,
             _year_month_expr=year_month_expr
         )
@@ -205,6 +221,7 @@ def render_smart_insights(
             })
 
         # ==================== 3. 고위험 CFR 기기 경고 ====================
+        # CFR 메트릭: 모든 필터 적용
         cfr_df = calculate_cfr_by_device(
             lf,
             date_col=date_col,
@@ -283,10 +300,13 @@ def render_monthly_reports_chart(
     selected_dates,
     selected_manufacturers,
     selected_products,
+    devices,
+    clusters,
+    defect_types,
     top_n,
     year_month_expr
 ):
-    """월별 보고서 수 차트 렌더링 (Plotly 인터랙티브 차트)"""
+    """월별 보고서 수 차트 렌더링 (하이브리드 필터: 시계열이므로 모든 필터 적용)"""
     import plotly.graph_objects as go
     import plotly.express as px
 
@@ -308,15 +328,15 @@ def render_monthly_reports_chart(
         - 계절성 패턴이 있다면 특정 시기에 예방 조치를 강화할 수 있습니다
         """)
 
-
     with st.spinner("데이터 분석 중..."):
-        # 데이터 집계
+        # 시계열 차트: products 제외하여 제품 비교 가능
+        # TODO: devices/clusters/defect_types 지원 추가 필요
         result_df = get_filtered_products(
             lf,
             date_col=date_col,
             selected_dates=selected_dates if selected_dates else None,
             selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
-            selected_products=selected_products if selected_products else None,
+            selected_products=None,  # 제품 분포를 보기 위해 제외
             top_n=top_n,
             _year_month_expr=year_month_expr
         )
@@ -334,7 +354,7 @@ def render_monthly_reports_chart(
                 date_col=date_col,
                 selected_dates=selected_dates if selected_dates else None,
                 selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
-                selected_products=selected_products if selected_products else None,
+                selected_products=None,  # 제품 분포를 보기 위해 제외
                 _year_month_expr=year_month_expr
             )
 
@@ -529,9 +549,12 @@ def render_defect_analysis(
     selected_dates,
     selected_manufacturers,
     selected_products,
+    devices,
+    clusters,
+    defect_types,
     year_month_expr
 ):
-    """제조사-제품군별 결함 분석 렌더링"""
+    """제조사-제품군별 결함 분석 렌더링 (하이브리드 필터: defect_types 제외)"""
     st.subheader("🔧 제조사 - 제품군별 결함")
 
     # 설명 추가
@@ -550,12 +573,13 @@ def render_defect_analysis(
         - 여러 제품에서 공통적으로 나타나는 결함은 산업 전반의 기술적 과제입니다
         """)
 
-
     if not selected_dates:
         st.info("결함 분석을 위해 년-월을 선택해주세요.")
         return
 
     with st.spinner("결함 분석 중..."):
+        # 결함 유형 분포 분석 (defect_types는 분석 대상이므로 필터 제외)
+        # TODO: devices/clusters 지원 추가 필요
         defect_df = analyze_manufacturer_defects(
             lf,
             date_col=date_col,
@@ -973,11 +997,14 @@ def render_cfr_analysis(
     selected_dates,
     selected_manufacturers,
     selected_products,
+    devices,
+    clusters,
+    defect_types,
     year_month_expr,
     sidebar_min_cases,
     sidebar_top_n
 ):
-    """기기별 치명률(CFR) 분석 렌더링 (시각화 추가)"""
+    """기기별 치명률(CFR) 분석 렌더링 (하이브리드 필터: 모든 필터 적용)"""
     import plotly.graph_objects as go
     import plotly.express as px
 
@@ -1003,7 +1030,6 @@ def render_cfr_analysis(
         - p-value < 0.05인 제품은 통계적으로 유의하게 평균보다 위험하거나 안전한 제품입니다
         """)
 
-
     try:
         # 사이드바에서 설정된 값 사용
         top_n_cfr = sidebar_top_n
@@ -1011,6 +1037,8 @@ def render_cfr_analysis(
 
         st.caption(f"💡 사이드바 설정: 상위 {top_n_cfr}개 표시, 최소 {min_cases}건 이상")
 
+        # CFR 분석: 메트릭이므로 모든 필터 적용
+        # TODO: devices/clusters/defect_types 지원 추가 필요
         with st.spinner("기기별 치명률 분석 중..."):
             cfr_result = calculate_cfr_by_device(
                 lf,
@@ -1288,9 +1316,12 @@ def render_cluster_and_event_analysis(
     selected_dates,
     selected_manufacturers,
     selected_products,
+    devices,
+    clusters,
+    defect_types,
     year_month_expr
 ):
-    """defect type별 상위 문제 & 사건 유형별 분포 렌더링"""
+    """defect type별 상위 문제 & 사건 유형별 분포 렌더링 (하이브리드 필터: defect_types 제외)"""
     import plotly.graph_objects as go
     import streamlit.components.v1 as components
     import html
@@ -1302,11 +1333,12 @@ def render_cluster_and_event_analysis(
         st.markdown("""
         **이 섹션**은 결함 유형(defect type)별로 어떤 문제 부품이 많이 보고되었는지, 그리고 전체적으로 환자 피해가 어떻게 분포되어 있는지 보여줍니다.
 
-        **좌측 - 환자 피해 분포 (파이 차트)**:
+        **환자 피해 분포 (파이 차트)**:
         - 선택한 조건에서 발생한 환자 피해를 사망, 중증 부상, 경증 부상, 부상 없음으로 분류합니다
         - 전체 부작용 보고 중 실제로 심각한 피해로 이어진 비율을 파악할 수 있습니다
+        - 결함 유형 필터를 선택하면 해당 결함 유형의 환자 피해 분포만 표시됩니다
 
-        **우측 - defect type별 상위 문제**:
+        **defect type별 상위 문제**:
         - 특정 결함 유형(카테고리)을 선택하면 해당 결함에서 가장 빈번하게 보고된 문제 부품 상위 10개를 표시합니다
         - 각 부품의 건수와 비율을 직관적인 막대 차트로 확인할 수 있습니다
 
@@ -1316,9 +1348,9 @@ def render_cluster_and_event_analysis(
         - defect type과 문제 부품을 함께 분석하면 근본 원인을 더 명확히 파악할 수 있습니다
         """)
 
-
     try:
-        # 사용 가능한 defect type 가져오기
+        # 사용 가능한 defect type 가져오기 (defect_types는 분석 대상이므로 필터 제외)
+        # TODO: devices/clusters 지원 추가 필요
         with st.spinner("defect type 목록 로딩 중..."):
             available_clusters = get_available_clusters(
                 lf,
@@ -1332,28 +1364,32 @@ def render_cluster_and_event_analysis(
             )
 
         if len(available_clusters) > 0:
+            # 상단에 결함 유형 선택 필터 배치
+            st.markdown("### 결함 유형 선택")
+
+            # 이전에 선택한 defect type 가져오기
+            prev_selected_cluster = st.session_state.get('prev_selected_cluster', None)
+            default_index = 0
+            if prev_selected_cluster and prev_selected_cluster in available_clusters:
+                default_index = available_clusters.index(prev_selected_cluster)
+
+            selected_cluster = st.selectbox(
+                "카테고리 선택",
+                options=available_clusters,
+                index=default_index,
+                help="분석할 defect type를 선택하세요",
+                key='cluster_selectbox'
+            )
+            st.session_state.prev_selected_cluster = selected_cluster
+
+            st.markdown("---")
+
             # 좌우 레이아웃
             event_col, cluster_col = st.columns([1, 1])
 
             # 우측: defect type별 상위 문제
             with cluster_col:
                 st.markdown("### defect type별 상위 문제")
-
-                # 이전에 선택한 defect type 가져오기
-                prev_selected_cluster = st.session_state.get('prev_selected_cluster', None)
-                default_index = 0
-                if prev_selected_cluster and prev_selected_cluster in available_clusters:
-                    default_index = available_clusters.index(prev_selected_cluster)
-
-                selected_cluster = st.selectbox(
-                    "카테고리 선택",
-                    options=available_clusters,
-                    index=default_index,
-                    help="분석할 defect type를 선택하세요",
-                    key='cluster_selectbox',
-                    label_visibility="collapsed"
-                )
-                st.session_state.prev_selected_cluster = selected_cluster
 
                 # 상위 N개 설정 (기본값 10개)
                 top_n_cluster = 10
@@ -1527,6 +1563,7 @@ def render_cluster_and_event_analysis(
             # 좌측: 환자 피해 분포 파이 차트
             with event_col:
                 st.markdown("### 환자 피해 분포")
+                st.caption(f"선택된 결함 유형: **{selected_cluster}**")
 
                 with st.spinner("환자 피해 데이터 로딩 중..."):
                     harm_summary = get_patient_harm_summary(
@@ -1536,6 +1573,7 @@ def render_cluster_and_event_analysis(
                         selected_dates=selected_dates if selected_dates else None,
                         selected_manufacturers=selected_manufacturers if selected_manufacturers else None,
                         selected_products=selected_products if selected_products else None,
+                        selected_defect_types=[selected_cluster] if selected_cluster else None,
                         _year_month_expr=year_month_expr
                     )
 

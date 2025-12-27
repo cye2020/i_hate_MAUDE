@@ -12,7 +12,6 @@ import overview_tab as o_tab
 import dashboard.eda_tab as e_tab
 import cluster_tab as c_tab
 import spike_tab as s_tab
-from dashboard.utils.sidebar_manager import create_sidebar
 from utils.dashboard_config import get_config
 from utils.constants import DisplayNames
 from dashboard.utils.custom_css import apply_custom_css
@@ -105,57 +104,94 @@ from utils.data_utils import get_year_month_expr
 # year_month 표현식 생성 (공통)
 year_month_expr = get_year_month_expr(maude_lf, ColumnNames.DATE_RECEIVED)
 
-if current_tab == "cluster":
-    # cluster 탭: available_clusters를 미리 계산 (전체 데이터 기준)
-    from utils.analysis_cluster import get_available_clusters
+# 공통 필터 옵션 로드 (모든 탭에서 사용)
+from dashboard.utils.filter_helpers import (
+    get_available_filters,
+    get_available_clusters
+)
 
-    # available_clusters 계산 (전체 데이터 기준)
-    available_clusters = get_available_clusters(
+# 1. 제조사, 제품군 (전체 데이터 기준)
+_, available_manufacturers, available_products = get_available_filters(
+    maude_lf,
+    date_col=ColumnNames.DATE_RECEIVED,
+    _year_month_expr=year_month_expr
+)
+
+# 2. 클러스터 (전체 데이터 기준, -1 제외)
+available_clusters = get_available_clusters(
+    maude_lf,
+    cluster_col=ColumnNames.CLUSTER,
+    exclude_minus_one=True
+)
+
+# 3. 결함 유형 (전체 데이터 기준)
+from dashboard.utils.filter_helpers import get_available_defect_types
+available_defect_types = get_available_defect_types(
+    maude_lf,
+    date_col=ColumnNames.DATE_RECEIVED,
+    _year_month_expr=year_month_expr
+)
+
+# 4. 기기는 cascade이므로 빈 리스트로 초기화 (사용자 선택에 따라 업데이트)
+available_devices = []
+
+# 공통 동적 옵션 구성
+common_dynamic_options = {
+    "manufacturers": available_manufacturers,
+    "products": available_products,
+    "devices": available_devices,
+    "defect_types": available_defect_types,
+    "clusters": available_clusters,
+    "_cascade_config": {
+        "products": {
+            "depends_on": "manufacturers",
+            "data_source": maude_lf
+        },
+        "devices": {
+            "depends_on": ["manufacturers", "products"],
+            "data_source": maude_lf
+        }
+    }
+}
+
+# 탭별 추가 동적 옵션 (필요 시)
+if current_tab == "cluster":
+    # Cluster 탭: selected_cluster 옵션 추가
+    from utils.analysis_cluster import get_available_clusters as get_clusters_with_dates
+
+    tab_available_clusters = get_clusters_with_dates(
         _lf=maude_lf,
         cluster_col=ColumnNames.CLUSTER,
         date_col=ColumnNames.DATE_RECEIVED,
-        selected_dates=None,  # 전체 기간
+        selected_dates=None,
         selected_manufacturers=None,
         selected_products=None,
         exclude_minus_one=True,
         _year_month_expr=year_month_expr
     )
 
-    # 동적 옵션으로 사이드바 렌더링
-    manager = SidebarManager(current_tab)
-    dynamic_options = {
-        "selected_cluster": available_clusters
-    }
-    filters = manager.render_sidebar(dynamic_options=dynamic_options)
+    common_dynamic_options["selected_cluster"] = tab_available_clusters
 
-elif current_tab == "eda":
-    # eda 탭: manufacturers와 products를 동적으로 계산
-    from dashboard.utils.filter_helpers import get_available_filters
+# 사이드바 렌더링
+manager = SidebarManager(current_tab)
+filters = manager.render_sidebar(dynamic_options=common_dynamic_options)
 
-    # 사용 가능한 제조사/제품 계산 (전체 데이터 기준)
-    _, available_manufacturers, available_products = get_available_filters(
-        maude_lf,
-        date_col=ColumnNames.DATE_RECEIVED,
-        _year_month_expr=year_month_expr
-    )
+# ==================== 필터 변경 감지 및 캐시 무효화 ====================
+# 필터 값을 문자열로 변환하여 이전 값과 비교
+import json
+current_filter_state = json.dumps({
+    "manufacturers": filters.get("manufacturers", []),
+    "products": filters.get("products", []),
+}, sort_keys=True)
 
-    # 동적 옵션으로 사이드바 렌더링
-    # cascading_filter 메타데이터 전달: products는 manufacturers에 의존
-    manager = SidebarManager(current_tab)
-    dynamic_options = {
-        "manufacturers": available_manufacturers,
-        "products": available_products,
-        "_cascade_config": {
-            "products": {
-                "depends_on": "manufacturers",
-                "data_source": maude_lf  # 필터링에 사용할 데이터
-            }
-        }
-    }
-    filters = manager.render_sidebar(dynamic_options=dynamic_options)
-
-else:
-    filters = create_sidebar(current_tab)
+# 세션 스테이트에 이전 필터 상태 저장
+if "prev_filter_state" not in st.session_state:
+    st.session_state.prev_filter_state = current_filter_state
+elif st.session_state.prev_filter_state != current_filter_state:
+    # 필터가 변경되었으면 캐시 클리어 및 페이지 재실행
+    st.cache_data.clear()
+    st.session_state.prev_filter_state = current_filter_state
+    st.rerun()
 
 # ==================== 메인 콘텐츠 ====================
 

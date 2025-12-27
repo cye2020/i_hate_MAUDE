@@ -8,7 +8,7 @@ from typing import Optional
 
 from dashboard.utils.analysis import perform_spike_detection, get_spike_time_series
 from dashboard.utils.constants import ColumnNames
-from dashboard.utils.ui_components import render_spike_filter_summary, render_bookmark_manager
+from dashboard.utils.ui_components import render_filter_summary_badge, render_spike_filter_summary, render_bookmark_manager
 
 
 def show(filters=None, lf: pl.LazyFrame = None):
@@ -40,7 +40,7 @@ def show(filters=None, lf: pl.LazyFrame = None):
     if filters is None:
         filters = {}
 
-    # 필터 값 추출
+    # 필터 값 추출 - 급증 탐지 파라미터
     as_of_month = filters.get('as_of_month', '2025-11')
     window = filters.get('window', 1)
     min_c_recent = filters.get('min_c_recent', 20)
@@ -50,17 +50,33 @@ def show(filters=None, lf: pl.LazyFrame = None):
     correction = filters.get('correction', 'fdr_bh')
     min_methods = filters.get('min_methods', 2)
 
+    # 공통 필터 추출
+    manufacturers = filters.get("manufacturers", [])
+    products = filters.get("products", [])
+    devices = filters.get("devices", [])
+    defect_types = filters.get("defect_types", [])
+    clusters = filters.get("clusters", [])
+
     # ==================== 북마크 관리 ====================
     render_bookmark_manager(
         tab_name="spike",
         current_filters=filters,
         filter_keys=[
             "as_of_month", "window", "min_c_recent", "z_threshold",
-            "eps", "alpha", "correction", "min_methods"
+            "eps", "alpha", "correction", "min_methods",
+            "manufacturers", "products", "devices", "defect_types", "clusters"
         ]
     )
 
     # ==================== 필터 요약 배지 (Spike 전용) ====================
+    render_filter_summary_badge(
+        manufacturers=manufacturers,
+        products=products,
+        devices=devices,
+        defect_types=defect_types,
+        clusters=clusters
+    )
+    
     render_spike_filter_summary(
         as_of_month=as_of_month,
         window=window,
@@ -72,10 +88,21 @@ def show(filters=None, lf: pl.LazyFrame = None):
     )
     st.markdown("---")
 
-    # 스파이크 탐지 수행 (기본값으로 미리 계산)
+    # 공통 필터 적용
+    from dashboard.utils.filter_helpers import apply_common_filters
+    filtered_lf = apply_common_filters(
+        lf,
+        manufacturers=manufacturers,
+        products=products,
+        devices=devices,
+        defect_types=defect_types,
+        clusters=clusters
+    )
+
+    # 스파이크 탐지 수행 (필터링된 데이터로 계산)
     with st.spinner("급증 탐지 분석 중..."):
         result_df = outlier_detect_check(
-            lf=lf,
+            lf=filtered_lf,
             window=window,
             min_c_recent=min_c_recent,
             z_threshold=z_threshold,
@@ -84,6 +111,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
             correction=correction,
             min_methods=min_methods,
             month=as_of_month,
+            manufacturers=tuple(manufacturers) if manufacturers else (),
+            products=tuple(products) if products else ()
         )
 
     if result_df is None or len(result_df) == 0:
@@ -430,12 +459,14 @@ def outlier_detect_check(
     correction: str = 'fdr_bh',
     min_methods: int = 2,
     month: str = "2025-11",
+    manufacturers: tuple = None,
+    products: tuple = None,
 ) -> Optional[pl.DataFrame]:
     """
     스파이크 탐지 분석 수행
 
     Args:
-        lf: MAUDE 데이터 LazyFrame
+        lf: MAUDE 데이터 LazyFrame (이미 공통 필터 적용됨)
         window: 윈도우 크기 (1 또는 3)
         min_c_recent: 최소 최근 케이스 수
         z_threshold: Z-score 임계값
@@ -444,6 +475,8 @@ def outlier_detect_check(
         correction: 다중검정 보정 방법 ('bonferroni', 'sidak', 'fdr_bh', None)
         min_methods: 앙상블 스파이크 판정 최소 방법 수
         month: 기준 월 (예: "2025-11")
+        manufacturers: 제조사 필터 (캐시 키용)
+        products: 제품군 필터 (캐시 키용)
 
     Returns:
         스파이크 탐지 결과 DataFrame
@@ -460,6 +493,8 @@ def outlier_detect_check(
         alpha=alpha,
         correction=correction,
         min_methods=min_methods,
+        manufacturers=manufacturers,
+        products=products,
     )
 
     return result_df

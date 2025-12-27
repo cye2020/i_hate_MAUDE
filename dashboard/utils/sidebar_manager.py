@@ -38,7 +38,7 @@ class SidebarManager:
         # 로고
         logo_path = header_config.get("logo")
         if logo_path:
-            st.image(logo_path, width=200)
+            st.image(logo_path, width='stretch')
 
         # 프로젝트 정보
         project_info = header_config.get("project_info", {})
@@ -125,13 +125,18 @@ class SidebarManager:
                 - key: 위젯 고유 키
                 - label: 위젯 라벨
                 - args: 위젯별 인자 (options, min_value, max_value 등)
+                - enabled: (선택) 위젯 활성화 여부 (기본값: True)
                 - caption: (선택) 값 표시 포맷 (예: "{value}개월")
             is_common: 공통 필터 여부 (True면 common_key, False면 dashboard_type_key)
             dynamic_options: 동적으로 채워질 옵션들 (key: options 리스트)
 
         Returns:
-            위젯에서 선택된 값
+            위젯에서 선택된 값 (enabled=False면 None)
         """
+        # enabled 체크 - False면 렌더링하지 않음
+        if not filter_config.get("enabled", True):
+            return None
+
         widget_type = filter_config.get("type")
         key = filter_config.get("key")
         label = filter_config.get("label", "")
@@ -200,34 +205,58 @@ class SidebarManager:
             options = args.get("options", [])
             default = args.get("default", [])
 
-            # Cascading filter 지원: products가 manufacturers에 의존
-            if key == "products" and dynamic_options:
-                cascade_config = dynamic_options.get("_cascade_config", {}).get("products", {})
-                depends_on_key = cascade_config.get("depends_on")
+            # Cascading filter 지원: 범용 cascade 로직
+            if dynamic_options and key in dynamic_options.get("_cascade_config", {}):
+                cascade_config = dynamic_options.get("_cascade_config", {}).get(key, {})
+                depends_on = cascade_config.get("depends_on")
 
-                if depends_on_key:
-                    # 의존하는 필터의 widget_key 구성 (prefix 포함)
-                    if is_common:
-                        parent_widget_key = f"common_{depends_on_key}"
-                    else:
-                        parent_widget_key = f"{self.dashboard_type}_{depends_on_key}"
+                # depends_on이 문자열 또는 리스트일 수 있음
+                if isinstance(depends_on, str):
+                    depends_on = [depends_on]
 
-                    # 의존하는 필터 값 가져오기
-                    parent_value = st.session_state.get(parent_widget_key, [])
+                if depends_on:
+                    # 의존하는 모든 필터의 값 가져오기
+                    parent_values = {}
+                    all_parents_selected = True
 
-                    if parent_value and len(parent_value) > 0:
-                        # 제조사 선택됨 → 해당 제조사의 제품만 필터링
-                        from dashboard.utils.filter_helpers import get_products_by_manufacturers
+                    for parent_key in depends_on:
+                        if is_common:
+                            parent_widget_key = f"common_{parent_key}"
+                        else:
+                            parent_widget_key = f"{self.dashboard_type}_{parent_key}"
+
+                        parent_value = st.session_state.get(parent_widget_key, [])
+                        parent_values[parent_key] = parent_value
+
+                        # 하나라도 선택 안 되었으면 cascade 안 함
+                        if not parent_value or len(parent_value) == 0:
+                            all_parents_selected = False
+
+                    # 모든 parent가 선택되었을 때만 cascade 필터링
+                    if all_parents_selected:
                         from utils.constants import ColumnNames
-
                         data_source = cascade_config.get("data_source")
+
                         if data_source is not None:
-                            options = get_products_by_manufacturers(
-                                data_source,
-                                parent_value,
-                                manufacturer_col=ColumnNames.MANUFACTURER,
-                                product_col=ColumnNames.PRODUCT_CODE
-                            )
+                            # key에 따라 적절한 함수 호출
+                            if key == "products":
+                                from dashboard.utils.filter_helpers import get_products_by_manufacturers
+                                options = get_products_by_manufacturers(
+                                    data_source,
+                                    parent_values.get("manufacturers", []),
+                                    manufacturer_col=ColumnNames.MANUFACTURER,
+                                    product_col=ColumnNames.PRODUCT_CODE
+                                )
+                            elif key == "devices":
+                                from dashboard.utils.filter_helpers import get_devices_by_filters
+                                options = get_devices_by_filters(
+                                    data_source,
+                                    selected_manufacturers=parent_values.get("manufacturers"),
+                                    selected_products=parent_values.get("products"),
+                                    manufacturer_col=ColumnNames.MANUFACTURER,
+                                    product_col=ColumnNames.PRODUCT_CODE,
+                                    device_col=ColumnNames.UDI_DI
+                                )
 
                             # 기존 선택값 중 유효한 것만 유지
                             prev_selected = st.session_state.get(f"prev_{widget_key}", [])

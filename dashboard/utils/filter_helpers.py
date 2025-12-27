@@ -198,3 +198,124 @@ def get_available_defect_types(
     )[ColumnNames.DEFECT_TYPE].to_list()
 
     return defect_types
+
+
+@st.cache_data
+def get_devices_by_filters(
+    _lf: pl.LazyFrame,
+    selected_manufacturers: Optional[List[str]] = None,
+    selected_products: Optional[List[str]] = None,
+    manufacturer_col: str = ColumnNames.MANUFACTURER,
+    product_col: str = ColumnNames.PRODUCT_CODE,
+    device_col: str = ColumnNames.UDI_DI
+) -> List[str]:
+    """선택된 제조사/제품군에 해당하는 기기 목록을 반환 (cascade filter)
+
+    Args:
+        _lf: LazyFrame (언더스코어로 시작하여 캐싱에서 제외)
+        selected_manufacturers: 선택된 제조사 리스트
+        selected_products: 선택된 제품 리스트
+        manufacturer_col: 제조사 컬럼명
+        product_col: 제품군(제품코드) 컬럼명
+        device_col: 기기(UDI-DI) 컬럼명
+
+    Returns:
+        선택된 조건에 해당하는 기기 리스트
+    """
+    filtered_lf = _lf.filter(pl.col(device_col).is_not_null())
+
+    # 제조사 필터 적용
+    if selected_manufacturers and len(selected_manufacturers) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(manufacturer_col).is_in(selected_manufacturers))
+
+    # 제품군 필터 적용
+    if selected_products and len(selected_products) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(product_col).is_in(selected_products))
+
+    devices = (
+        filtered_lf
+        .select(pl.col(device_col))
+        .unique()
+        .sort(device_col)
+        .collect()
+    )[device_col].to_list()
+
+    return devices
+
+
+@st.cache_data
+def get_available_clusters(
+    _lf: pl.LazyFrame,
+    cluster_col: str = ColumnNames.CLUSTER,
+    exclude_minus_one: bool = True
+) -> List[int]:
+    """사용 가능한 클러스터 목록 반환
+
+    Args:
+        _lf: LazyFrame
+        cluster_col: 클러스터 컬럼명
+        exclude_minus_one: -1 클러스터 제외 여부
+
+    Returns:
+        클러스터 번호 리스트
+    """
+    filtered_lf = _lf.filter(pl.col(cluster_col).is_not_null())
+
+    if exclude_minus_one:
+        filtered_lf = filtered_lf.filter(pl.col(cluster_col) != -1)
+
+    clusters = (
+        filtered_lf
+        .select(pl.col(cluster_col))
+        .unique()
+        .sort(cluster_col)
+        .collect()
+    )[cluster_col].to_list()
+
+    return clusters
+
+
+def apply_common_filters(
+    lf: pl.LazyFrame,
+    manufacturers: list = None,
+    products: list = None,
+    devices: list = None,
+    defect_types: list = None,
+    clusters: list = None
+) -> pl.LazyFrame:
+    """공통 필터를 LazyFrame에 적용
+
+    Args:
+        lf: 원본 LazyFrame
+        manufacturers: 제조사 필터 (빈 리스트면 전체)
+        products: 제품군 필터 (빈 리스트면 전체)
+        devices: 기기 필터 (빈 리스트면 전체)
+        defect_types: 결함 유형 필터 (빈 리스트면 전체)
+        clusters: 클러스터 필터 (빈 리스트면 전체)
+
+    Returns:
+        필터링된 LazyFrame
+    """
+    filtered_lf = lf
+
+    # 제조사 필터
+    if manufacturers and len(manufacturers) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.MANUFACTURER).is_in(manufacturers))
+
+    # 제품군 필터
+    if products and len(products) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.PRODUCT_CODE).is_in(products))
+
+    # 기기 필터
+    if devices and len(devices) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.UDI_DI).is_in(devices))
+
+    # 결함 유형 필터
+    if defect_types and len(defect_types) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.DEFECT_TYPE).is_in(defect_types))
+
+    # 클러스터 필터
+    if clusters and len(clusters) > 0:
+        filtered_lf = filtered_lf.filter(pl.col(ColumnNames.CLUSTER).is_in(clusters))
+
+    return filtered_lf

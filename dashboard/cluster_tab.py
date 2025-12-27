@@ -35,16 +35,34 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ==================== 사이드바 필터 추출 ====================
     date_range = filters.get("date_range", None)
 
+    # 공통 필터 추출
+    manufacturers = filters.get("manufacturers", [])
+    products = filters.get("products", [])
+    devices = filters.get("devices", [])
+    defect_types = filters.get("defect_types", [])
+    clusters = filters.get("clusters", [])
+
     # date_range를 문자열 리스트로 변환 (공통 함수 사용)
     selected_dates = convert_date_range_to_months(date_range)
 
+    # 공통 필터 적용
+    from dashboard.utils.filter_helpers import apply_common_filters
+    filtered_lf = apply_common_filters(
+        lf,
+        manufacturers=manufacturers,
+        products=products,
+        devices=devices,
+        defect_types=defect_types,
+        clusters=clusters
+    )
+
     # year_month 표현식 생성 (재사용)
-    year_month_expr = get_year_month_expr(lf, ColumnNames.DATE_RECEIVED)
+    year_month_expr = get_year_month_expr(filtered_lf, ColumnNames.DATE_RECEIVED)
 
     # ==================== 사용 가능한 클러스터 목록 가져오기 ====================
     with st.spinner("클러스터 목록 로딩 중..."):
         available_clusters = get_available_clusters(
-            _lf=lf,
+            _lf=filtered_lf,
             cluster_col=ColumnNames.CLUSTER,
             date_col=ColumnNames.DATE_RECEIVED,
             selected_dates=selected_dates if selected_dates else None,
@@ -59,15 +77,24 @@ def show(filters=None, lf: pl.LazyFrame = None):
         return
 
     # ==================== 필터 요약 배지 (공통 함수 사용) ====================
-    render_filter_summary_badge(date_range=date_range)
+    render_filter_summary_badge(
+        date_range=date_range,
+        manufacturers=manufacturers,
+        products=products,
+        devices=devices,
+        defect_types=defect_types,
+        clusters=clusters
+    )
     st.markdown("---")
 
     # ==================== 핵심 인사이트 (상단 배치) ====================
     render_cluster_insights(
-        lf,
+        filtered_lf,
         available_clusters,
         selected_dates,
-        year_month_expr
+        year_month_expr,
+        manufacturers,
+        products
     )
     st.markdown("---")
 
@@ -81,32 +108,38 @@ def show(filters=None, lf: pl.LazyFrame = None):
     # ==================== 탭 1: 개별 클러스터 상세 분석 ====================
     with tab1:
         render_individual_cluster_analysis(
-            lf,
+            filtered_lf,
             available_clusters,
             selected_dates,
-            year_month_expr
+            year_month_expr,
+            manufacturers,
+            products
         )
 
     # ==================== 탭 2: 클러스터 간 비교 ====================
     with tab2:
         render_cluster_comparison(
-            lf,
+            filtered_lf,
             available_clusters,
             selected_dates,
-            year_month_expr
+            year_month_expr,
+            manufacturers,
+            products
         )
 
     # ==================== 탭 3: 전체 클러스터 개요 ====================
     with tab3:
         render_cluster_overview(
-            lf,
+            filtered_lf,
             available_clusters,
             selected_dates,
-            year_month_expr
+            year_month_expr,
+            manufacturers,
+            products
         )
 
 
-def render_individual_cluster_analysis(lf, available_clusters, selected_dates, year_month_expr):
+def render_individual_cluster_analysis(lf, available_clusters, selected_dates, year_month_expr, manufacturers, products):
     """개별 클러스터 상세 분석"""
     st.markdown("### 🔍 개별 클러스터 상세 분석")
     st.caption("특정 클러스터의 환자 피해, 문제 부품, 시계열 추이를 분석합니다")
@@ -166,7 +199,9 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
             selected_manufacturers=None,
             selected_products=None,
             top_n=top_n,
-            _year_month_expr=year_month_expr
+            _year_month_expr=year_month_expr,
+            manufacturers=tuple(manufacturers) if manufacturers else (),
+            products=tuple(products) if products else ()
         )
 
     # ==================== 1. 전체 요약 메트릭 ====================
@@ -294,12 +329,12 @@ def render_individual_cluster_analysis(lf, available_clusters, selected_dates, y
             st.metric("최소 월별 발생", f"{time_series['count'].min()}")
         with col4:
             std_dev = time_series['count'].std()
-            st.metric("표준편차", f"{std_dev:.2f}")
+            st.metric("표준편차", f"{std_dev:.2f}" if std_dev is not None else "N/A")
     else:
         st.info("시계열 데이터가 없습니다.")
 
 
-def render_cluster_comparison(lf, available_clusters, selected_dates, year_month_expr):
+def render_cluster_comparison(lf, available_clusters, selected_dates, year_month_expr, manufacturers, products):
     """클러스터 간 비교 분석"""
     st.markdown("### ⚖️ 클러스터 간 비교")
     st.caption("두 클러스터의 특성을 나란히 비교합니다")
@@ -361,7 +396,9 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
             component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
             date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
             selected_manufacturers=None, selected_products=None,
-            top_n=top_n, _year_month_expr=year_month_expr
+            top_n=top_n, _year_month_expr=year_month_expr,
+            manufacturers=tuple(manufacturers) if manufacturers else (),
+            products=tuple(products) if products else ()
         )
 
         data_b = cluster_check(
@@ -369,7 +406,9 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
             component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
             date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
             selected_manufacturers=None, selected_products=None,
-            top_n=top_n, _year_month_expr=year_month_expr
+            top_n=top_n, _year_month_expr=year_month_expr,
+            manufacturers=tuple(manufacturers) if manufacturers else (),
+            products=tuple(products) if products else ()
         )
 
     # ==================== 1. 요약 비교 ====================
@@ -496,7 +535,7 @@ def render_cluster_comparison(lf, available_clusters, selected_dates, year_month
         st.info("부품 데이터가 부족합니다.")
 
 
-def render_cluster_overview(lf, available_clusters, selected_dates, year_month_expr):
+def render_cluster_overview(lf, available_clusters, selected_dates, year_month_expr, manufacturers, products):
     """전체 클러스터 개요"""
     st.markdown("### 🌐 전체 클러스터 개요")
     st.caption("모든 클러스터의 전체적인 분포와 특성을 한눈에 확인합니다")
@@ -530,7 +569,9 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
                 component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
                 date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
                 selected_manufacturers=None, selected_products=None,
-                top_n=5, _year_month_expr=year_month_expr
+                top_n=5, _year_month_expr=year_month_expr,
+                manufacturers=tuple(manufacturers) if manufacturers else (),
+                products=tuple(products) if products else ()
             )
 
             all_cluster_data.append({
@@ -658,7 +699,7 @@ def render_cluster_overview(lf, available_clusters, selected_dates, year_month_e
         )
 
 
-def render_cluster_insights(lf, available_clusters, selected_dates, year_month_expr):
+def render_cluster_insights(lf, available_clusters, selected_dates, year_month_expr, manufacturers, products):
     """자동 인사이트 생성"""
     st.subheader("💡 핵심 인사이트")
 
@@ -673,7 +714,9 @@ def render_cluster_insights(lf, available_clusters, selected_dates, year_month_e
                 component_col=ColumnNames.PROBLEM_COMPONENTS, event_col=ColumnNames.PATIENT_HARM,
                 date_col=ColumnNames.DATE_RECEIVED, selected_dates=selected_dates,
                 selected_manufacturers=None, selected_products=None,
-                top_n=10, _year_month_expr=year_month_expr
+                top_n=10, _year_month_expr=year_month_expr,
+                manufacturers=tuple(manufacturers) if manufacturers else (),
+                products=tuple(products) if products else ()
             )
             all_data.append((cluster_id, data))
 

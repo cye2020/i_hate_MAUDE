@@ -11,7 +11,51 @@ common:
     enabled: false  # 공통 날짜 선택기 비활성화
 
   # 공통 필터 (모든 탭에서 사용)
-  filters: []  # 공통 필터 모두 비활성화
+  # 계층 구조: 제조사 → 제품군 → 기기 (cascade)
+  # 독립 필터: 결함 유형, 클러스터
+  filters:
+    - type: "multiselect"
+      key: "manufacturers"
+      label: "🏭 제조사"
+      help: "특정 제조사만 분석하려면 선택하세요. 선택하지 않으면 모든 제조사가 포함됩니다."
+      args:
+        options: []  # 동적 로드
+        default: []
+
+    - type: "multiselect"
+      key: "products"
+      label: "📦 제품군"
+      help: "특정 제품군만 분석하려면 선택하세요. 제조사를 선택하면 해당 제조사의 제품만 표시됩니다."
+      args:
+        options: []  # manufacturers에 의존 (cascade)
+        default: []
+
+    - type: "multiselect"
+      key: "devices"
+      label: "📱 기기"
+      help: "특정 기기만 분석하려면 선택하세요. 제조사/제품군을 선택하면 해당하는 기기만 표시됩니다."
+      enabled: false
+      args:
+        options: []  # manufacturers + products에 의존 (cascade)
+        default: []
+
+    - type: "multiselect"
+      key: "defect_types"
+      label: "🔧 결함 유형"
+      help: "특정 결함 유형만 분석하려면 선택하세요. 선택하지 않으면 모든 결함 유형이 포함됩니다."
+      enabled: false
+      args:
+        options: []  # 동적 로드 (독립 필터)
+        default: []
+
+    - type: "multiselect"
+      key: "clusters"
+      label: "🏷️ 클러스터"
+      help: "특정 클러스터만 분석하려면 선택하세요. 선택하지 않으면 모든 클러스터가 포함됩니다."
+      enabled: false
+      args:
+        options: []  # 동적 로드 (독립 필터)
+        default: []
 
 dashboards:
   overview:
@@ -22,25 +66,6 @@ dashboards:
         args:
           default_start: "2023-01"
           default_end: "2025-12"
-          
-      - type: "selectbox"
-        key: "segment"
-        label: "분석 기준"
-        args:
-          options:
-            - label: "전체"
-              value: null
-            - label: "제조사"
-              value: "manufacturer_name"
-            - label: "제품군"
-              value: "product_code"
-            - label: "기기"
-              value: "udi_di"
-            - label: "클러스터"
-              value: "cluster"
-            - label: "결함 유형"
-              value: "defect_type"
-          index: 0
 
   eda:
     filters:
@@ -52,23 +77,6 @@ dashboards:
         args:
           default_start: "2024-11"
           default_end: "2025-01"
-
-      # === 엔티티 필터 ===
-      - type: "multiselect"
-        key: "manufacturers"
-        label: "🏭 제조사 (선택 안함 = 전체)"
-        help: "특정 제조사만 분석하려면 선택하세요. 선택하지 않으면 모든 제조사가 포함됩니다."
-        args:
-          options: []  # 동적 로드
-          default: []
-
-      - type: "multiselect"
-        key: "products"
-        label: "📦 제품군 (선택 안함 = 전체)"
-        help: "특정 제품군만 분석하려면 선택하세요. 제조사를 선택하면 해당 제조사의 제품만 표시됩니다."
-        args:
-          options: []  # manufacturers에 의존
-          default: []
 
       # === 분석 파라미터 ===
       - type: "number_input"

@@ -46,25 +46,17 @@ def plot_sparkline(data_list, key="sparkline"):
 def plot_dual_axis_chart(
         data: pl.LazyFrame,
         start: str = None,
-        end: str = None,
-        segment: str = None,
-        segment_value: str = None
+        end: str = None
     ):
     """Dual-Axis 차트: Report Count (막대) + Severe Harm Rate (라인)
 
     Args:
-        data: LazyFrame 데이터
+        data: LazyFrame 데이터 (이미 공통 필터 적용됨)
         start: 시작 날짜 (예: "2024-01-01"), None이면 전체 기간
         end: 종료 날짜 (예: "2024-12-31"), None이면 전체 기간
-        segment: 세그먼트 컬럼명 (필터링할 컬럼)
-        segment_value: 세그먼트 값 (특정 값으로 필터링)
     """
-    # 1. 필터링 (날짜 + 세그먼트)
+    # 1. 날짜 필터링
     filtered_data = data
-
-    # Segment 필터 적용
-    if segment and segment_value:
-        filtered_data = filtered_data.filter(pl.col(segment) == segment_value)
 
     # 날짜 필터 적용
     if start and end:
@@ -156,21 +148,21 @@ def plot_risk_matrix(
         data: pl.LazyFrame,
         start: str = None,
         end: str = None,
-        segment_col: str = None,
-        segment_value: str = None,
         view_mode: str = "defect_type",
-        top_n: int = 20
+        top_n: int = 20,
+        manufacturers: list = None,
+        products: list = None
     ):
     """Risk Matrix: 발생 빈도 vs 치명률
 
     Args:
-        data: LazyFrame 데이터
+        data: LazyFrame 데이터 (이미 공통 필터 적용됨)
         start: 시작 날짜
         end: 종료 날짜
-        segment_col: 세그먼트 컬럼명
-        segment_value: 세그먼트 값
         view_mode: "defect_type", "manufacturer", "product"
         top_n: 상위 N개
+        manufacturers: 제조사 필터 (캐시 키용)
+        products: 제품군 필터 (캐시 키용)
     """
     from datetime import datetime
 
@@ -183,10 +175,10 @@ def plot_risk_matrix(
         _lf=data,
         start_date=start_dt,
         end_date=end_dt,
-        segment_col=segment_col,
-        segment_value=segment_value,
         view_mode=view_mode,
-        top_n=top_n
+        top_n=top_n,
+        manufacturers=tuple(manufacturers) if manufacturers else (),
+        products=tuple(products) if products else ()
     )
 
     if len(risk_data) == 0:
@@ -202,8 +194,6 @@ def plot_risk_matrix(
         "product": "제품군별 리스크"
     }
     title = view_titles.get(view_mode, "리스크 매트릭스")
-    if segment_value:
-        title = f"{segment_value} - {title}"
 
     st.subheader(f"📍 {title}")
 
@@ -286,9 +276,6 @@ def show(filters=None, lf: pl.LazyFrame = None):
 
     st.title(DisplayNames.FULL_TITLE_OVERVIEW)
 
-    # 필터에서 segment 값 가져오기 (None이면 전체)
-    segment = filters.get("segment", None)
-
     # 날짜 범위 가져오기 (month_range_picker에서)
     date_range = filters.get("date_range", None)
     start_date = None
@@ -297,51 +284,46 @@ def show(filters=None, lf: pl.LazyFrame = None):
     if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = date_range
 
+    # 공통 필터 가져오기
+    selected_manufacturers = filters.get("manufacturers", [])
+    selected_products = filters.get("products", [])
+    selected_devices = filters.get("devices", [])
+    selected_defect_types = filters.get("defect_types", [])
+    selected_clusters = filters.get("clusters", [])
+
     # 세션 스테이트 초기화 (브러시 선택된 날짜 범위 저장)
     if 'selected_date_range' not in st.session_state:
         st.session_state.selected_date_range = None
 
     # ==================== 필터 요약 배지 (공통 함수 사용) ====================
-    render_filter_summary_badge(date_range=date_range, segment=segment)
+    render_filter_summary_badge(
+        date_range=date_range,
+        manufacturers=selected_manufacturers,
+        products=selected_products,
+        devices=selected_devices,
+        defect_types=selected_defect_types,
+        clusters=selected_clusters
+    )
     st.markdown("---")
 
-    # 특정 값으로 드릴다운 필터 (Sidebar에서 선택한 segment 기준)
-    segment_col = None
-    segment_value = None
-
-    if segment:  # segment가 None이 아닌 경우 (전체가 아닌 경우)
-        with st.expander("🎯 특정 값 선택 (선택 사항)", expanded=False):
-            st.info(f"필터를 적용하지 않으면 모든 {segment}를 분석합니다.")
-
-            # Sidebar의 segment 값을 column name으로 사용
-            segment_col = segment
-
-            # 해당 컬럼의 고유값 가져오기
-            unique_values = lf.select(segment_col).unique().sort(segment_col).collect()[segment_col].to_list()
-
-            # None 제거 (있을 경우)
-            unique_values = [v for v in unique_values if v is not None]
-
-            # 선택 UI
-            filter_options = ["전체"] + unique_values
-            selected = st.selectbox(
-                f"{segment} 선택",
-                options=filter_options,
-                index=0,
-                key="segment_value_selector"
-            )
-
-            # "전체"가 아닌 경우에만 segment_value 설정
-            if selected != "전체":
-                segment_value = selected
+    # 공통 필터 적용
+    from dashboard.utils.filter_helpers import apply_common_filters
+    filtered_lf = apply_common_filters(
+        lf,
+        manufacturers=selected_manufacturers,
+        products=selected_products,
+        devices=selected_devices,
+        defect_types=selected_defect_types,
+        clusters=selected_clusters
+    )
 
     # Big Number 표시 (4개) - 선택된 기간의 최신 한 달 vs 전월 비교
     big_numbers = calculate_big_numbers(
-        _data=lf,
-        segment=segment,
-        segment_value=segment_value,
+        _data=filtered_lf,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        manufacturers=tuple(selected_manufacturers) if selected_manufacturers else (),
+        products=tuple(selected_products) if selected_products else ()
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -390,8 +372,8 @@ def show(filters=None, lf: pl.LazyFrame = None):
     start_str = start_date.strftime("%Y-%m-%d") if start_date else None
     end_str = end_date.strftime("%Y-%m-%d") if end_date else None
 
-    # Dual-Axis 차트 추가
-    plot_dual_axis_chart(lf, start=start_str, end=end_str, segment=segment, segment_value=segment_value)
+    # Dual-Axis 차트 추가 (공통 필터 적용된 데이터 사용)
+    plot_dual_axis_chart(filtered_lf, start=start_str, end=end_str)
 
     st.markdown("---")
 
@@ -437,13 +419,13 @@ def show(filters=None, lf: pl.LazyFrame = None):
         selected_view_mode = view_mode_map[view_mode]
 
     plot_risk_matrix(
-        data=lf,
+        data=filtered_lf,
         start=start_str,
         end=end_str,
-        segment_col=segment_col,
-        segment_value=segment_value,
         view_mode=selected_view_mode,
-        top_n=20
+        top_n=20,
+        manufacturers=selected_manufacturers,
+        products=selected_products
     )
 
     st.markdown("---")
