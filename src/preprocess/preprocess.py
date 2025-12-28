@@ -1,3 +1,31 @@
+"""
+⚠️ DEPRECATED: 이 파일은 더 이상 사용되지 않습니다.
+
+대신 다음 모듈들을 사용하세요:
+
+범용 유틸리티 (src/utils):
+  - src.utils.polars.patterns: get_pattern_cols, get_use_cols
+  - src.utils.polars.memory: estimate_string_size_stats, get_unique, get_unique_by_cols,
+                             get_unique_by_cols_safe, groupby_nunique_safe
+  - src.utils.polars.batch: process_in_chunks, collect_unique_safe
+  - src.utils.visualization.plotly_charts: draw_donut_chart
+
+전처리 특화 (src/preprocess):
+  - src.preprocess.eda: eda_proportion, overview_col, analyze_null_values
+  - src.preprocess.transforms: replace_pattern_with_null, yn_to_bool, str_to_categorical
+  - src.preprocess.udi: extract_di_from_public, fuzzy_match_dict
+  - src.preprocess.mdr: combine_mdr_texts, deduplicate_and_format
+
+마이그레이션 예시:
+  # Before
+  from src.preprocess.preprocess import get_pattern_cols, eda_proportion
+
+  # After
+  from src.utils.polars import get_pattern_cols
+  from src.preprocess.eda import eda_proportion
+"""
+
+import warnings
 import re
 import sys
 import psutil
@@ -13,6 +41,15 @@ from src.utils import is_running_in_notebook
 
 if not is_running_in_notebook():
     display = print
+
+# Deprecated 경고 표시
+warnings.warn(
+    "src.preprocess.preprocess 모듈은 deprecated되었습니다. "
+    "src.utils.polars, src.preprocess.eda 등의 새로운 모듈을 사용하세요. "
+    "자세한 내용은 파일 상단의 docstring을 참고하세요.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 def get_pattern_cols(
     lf: pl.LazyFrame,
@@ -45,17 +82,17 @@ def get_use_cols(
     lf: pl.LazyFrame,
     patterns: Dict[str, List[str]],
     base_cols: List[str],
-) -> Tuple[List[str], List[str], List[str], List[str]]:
+) -> Tuple[List[str], Dict[str, List[str]]]:
     """기본 컬럼과 패턴별 컬럼을 합쳐 분석용 컬럼 리스트 생성
-    
+
     Args:
         lf (pl.LazyFrame): 대상 LazyFrame
         patterns (Dict[str, List[str]]): 카테고리별 정규표현식 패턴 딕셔너리
             예: {'device': [r'^device_'], 'patient': [r'^patient_']}
         base_cols (List[str]): 기본적으로 포함할 컬럼 리스트
-    
+
     Returns:
-        Tuple[List[str], Dict[str, List[str]]]: 
+        Tuple[List[str], Dict[str, List[str]]]:
             - 전체 분석 컬럼 리스트 (중복 제거, 역순 정렬)
             - 카테고리별 컬럼 딕셔너리
     
@@ -747,14 +784,14 @@ def groupby_nunique_safe(
     Examples:
     ---------
     >>> # 단순 카운트만
-    >>> result = safe_groupby_unique(
-    ...     lf, 
+    >>> result = groupby_nunique_safe(
+    ...     lf,
     ...     group_cols=['device_model', 'brand_name'],
     ...     top_n=50
     ... )
-    
+
     >>> # unique 개수도 함께 계산
-    >>> result = safe_groupby_unique(
+    >>> result = groupby_nunique_safe(
     ...     lf,
     ...     group_cols=['device_model', 'brand_name'],
     ...     agg_cols=['report_id', 'event_type'],
