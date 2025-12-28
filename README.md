@@ -91,18 +91,14 @@ Project4/
 ### 1. 환경 설정
 
 ```bash
-# Python 3.10+ 권장
+# Python 3.10.12 권장
 pip install -r requirements.txt
 ```
 
 ### 2. 데이터 다운로드
 
 ```bash
-# MAUDE Event 데이터 (2024년)
-python -m src.download_maude --name event --start 2024 --end 2024 \
-    --output-file data/bronze/maude_raw.parquet --max-workers 4
-
-# UDI 데이터 (스크립트 별도 실행 필요)
+# 스크립트 값 조정 후 실행
 bash download_data.sh
 ```
 
@@ -113,7 +109,22 @@ bash download_data.sh
 # (notebooks/02_preprocess.ipynb 참고)
 ```
 
-### 4. 대시보드 실행
+### 4. 텍스트 전처리 (MDR Text)
+
+```bash
+# MDR 텍스트 전처리 실행
+bash mdr_text_preprocess.bash
+```
+
+### 5. 클러스터링
+
+```bash
+# 클러스터링 파이프라인 실행
+# ⚠️ 주의: 현재 코드 정리 중
+# (추후 업데이트 예정)
+```
+
+### 6. 대시보드 실행
 
 ```bash
 streamlit run dashboard/Home.py

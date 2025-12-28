@@ -64,7 +64,7 @@ echo "=========================================="
 echo ""
 
 # 설정
-MAUDE_START_YEAR=2020
+MAUDE_START_YEAR=2023
 MAUDE_END_YEAR=2025
 MAX_WORKERS=10
 
