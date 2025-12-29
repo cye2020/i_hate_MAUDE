@@ -604,8 +604,8 @@ def render_download_button(
     Example:
         >>> render_download_button(
         ...     data=result_df,
-        ...     filename_prefix="monthly_reports",
-        ...     key="download_monthly"
+        ...     filename_prefix="total_reports",
+        ...     key="download_total"
         ... )
     """
     import pandas as pd
