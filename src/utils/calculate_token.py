@@ -1,5 +1,4 @@
 import tiktoken
-from google import genai
 from dotenv import load_dotenv
 import os
 from typing import Union, List, Optional, Dict, Any
@@ -7,31 +6,6 @@ from tqdm import tqdm
 import numpy as np
 
 load_dotenv()
-
-# API 키 설정이 필요할 수 있습니다 (환경 변수 권장)
-# client = genai.Client(api_key="YOUR_API_KEY")
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
-
-def count_tokens_gemini(model_name: str, text: str) -> int:
-    """
-    Gemini API를 사용하여 텍스트의 토큰 수를 계산합니다.
-
-    Args:
-        model_name: Gemini 모델 이름 (예: "gemini-2.5-flash-light")
-        text: 토큰 수를 계산할 텍스트
-
-    Returns:
-        int: 토큰 수
-    """
-    if client is None:
-        raise ValueError("GOOGLE_API_KEY가 설정되지 않았습니다.")
-
-    response = client.models.count_tokens(
-        model=model_name,
-        contents=[{"role": "user", "parts": [{"text": text}]}]
-    )
-    return response.total_tokens
 
 
 def count_tokens_openai(model_name: str, text: str) -> int:
@@ -129,10 +103,6 @@ def count_tokens(
             if model_name is None:
                 raise ValueError("tokenizer_type='openai'인 경우 model_name이 필요합니다.")
             return count_tokens_openai(model_name, texts)
-        elif tokenizer_type == "gemini":
-            if model_name is None:
-                raise ValueError("tokenizer_type='gemini'인 경우 model_name이 필요합니다.")
-            return count_tokens_gemini(model_name, texts)
         else:
             raise ValueError(f"지원하지 않는 tokenizer_type: {tokenizer_type}")
 
@@ -157,11 +127,6 @@ def count_tokens(
             if model_name is None:
                 raise ValueError("tokenizer_type='openai'인 경우 model_name이 필요합니다.")
             batch_counts = [count_tokens_openai(model_name, text) for text in batch]
-            token_counts.extend(batch_counts)
-        elif tokenizer_type == "gemini":
-            if model_name is None:
-                raise ValueError("tokenizer_type='gemini'인 경우 model_name이 필요합니다.")
-            batch_counts = [count_tokens_gemini(model_name, text) for text in batch]
             token_counts.extend(batch_counts)
         else:
             raise ValueError(f"지원하지 않는 tokenizer_type: {tokenizer_type}")
@@ -195,9 +160,3 @@ if __name__ == '__main__':
     token_count = count_tokens_openai(model, text_to_count)
 
     print(f"'{text_to_count}'의 토큰 수 ({model}): {token_count}")
-    
-    text_to_count_gemini = "Counting tokens for Gemini models in Python."
-    model_gemini = "gemini-2.5-flash-light" 
-    token_count_gemini = count_tokens_gemini(model_gemini, text_to_count_gemini)
-
-    print(f"'{text_to_count_gemini}'의 토큰 수 ({model_gemini}): {token_count_gemini}")
