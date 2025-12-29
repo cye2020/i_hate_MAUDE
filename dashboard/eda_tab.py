@@ -219,9 +219,9 @@ def render_smart_insights(
             top_count = top_product_df["total_count"][0]
             insights.append({
                 "type": "info",
-                "text": term.format_message('eda_top_product',
-                                           manufacturer_product=top_mfr_product,
-                                           count=top_count)
+            "text": term.format_message('eda_top_product',
+                                        manufacturer_product=top_mfr_product,
+                                        count=top_count)
             })
 
         # ==================== 2. 고위험 CFR 기기 경고 ====================
@@ -321,10 +321,8 @@ def render_total_reports_chart(
     import plotly.express as px
 
     st.subheader("📊 누적 보고서 수")
-    st.subheader("📊 누적 보고서 수")
 
     # 설명 추가
-    with st.expander("ℹ️ 누적 보고서 수란?", expanded=False):
     with st.expander("ℹ️ 누적 보고서 수란?", expanded=False):
         st.markdown("""
         **누적 보고서 수**는 제조사-제품군별로 시간에 따른 부작용 보고 건수를 추적합니다.
@@ -607,83 +605,118 @@ def render_defect_analysis(
 
         if len(unique_manufacturers) > 0:
             # 탭 방식으로 변경
-            tab1, tab2, tab3 = st.tabs(["📊 상위 5개 비교", "⚖️ 1:1 비교", "🔍 개별 분석"])
+            tab1, tab2, tab3 = st.tabs(["📊 상위 N개 비교", "⚖️ 1:1 비교", "🔍 개별 분석"])
 
             with tab1:
-                # 상위 5개 제조사-제품군 비교
-                st.markdown("#### 상위 5개 제조사-제품군 결함 비교")
+                # 상위 N개 제조사-제품군 비교
+                st.markdown("#### 상위 N개 제조사-제품군 결함 비교")
 
-                # 전체 건수 기준 상위 5개 추출
-                top5_manufacturers = (
-                    display_df.groupby("manufacturer_product")["count"]
+                # 상위 N개 및 결함 유형 필터 UI
+                col_topn, col_defect_filter = st.columns([1, 3])
+
+                with col_topn:
+                    top_n_defect = st.number_input(
+                        "상위 N개",
+                        min_value=3,
+                        max_value=20,
+                        value=5,
+                        step=1,
+                        key="top_n_defect_comparison",
+                        help="비교할 제조사-제품군 개수"
+                    )
+
+                with col_defect_filter:
+                    # 사용 가능한 결함 유형 목록 (전체 데이터에서 추출)
+                    all_defect_types = display_df[ColumnNames.DEFECT_TYPE].unique().tolist()
+
+                    selected_defect_types_filter = st.multiselect(
+                        "결함 유형 필터 (선택 시 해당 유형만 표시)",
+                        options=all_defect_types,
+                        default=all_defect_types,
+                        key="defect_type_filter_tab1",
+                        help="비교할 결함 유형을 선택하세요"
+                    )
+
+                # 전체 건수 기준 상위 N개 추출
+                # 결함 유형 필터 적용
+                if selected_defect_types_filter:
+                    filtered_display_df = display_df[display_df[ColumnNames.DEFECT_TYPE].isin(selected_defect_types_filter)]
+                else:
+                    filtered_display_df = display_df
+
+                top_n_manufacturers = (
+                    filtered_display_df.groupby("manufacturer_product")["count"]
                     .sum()
                     .sort_values(ascending=False)
-                    .head(5)
+                    .head(top_n_defect)
                     .index.tolist()
                 )
 
-                top5_df = display_df[display_df["manufacturer_product"].isin(top5_manufacturers)]
+                top_n_df = filtered_display_df[filtered_display_df["manufacturer_product"].isin(top_n_manufacturers)]
 
                 # Plotly로 개선된 비교 차트
                 import plotly.graph_objects as go
 
-                fig = go.Figure()
+                if len(top_n_manufacturers) > 0 and len(top_n_df) > 0:
+                    fig = go.Figure()
 
-                for manufacturer in top5_manufacturers:
-                    mfr_data = top5_df[top5_df["manufacturer_product"] == manufacturer]
+                    for manufacturer in top_n_manufacturers:
+                        mfr_data = top_n_df[top_n_df["manufacturer_product"] == manufacturer]
 
-                    fig.add_trace(go.Bar(
-                        name=manufacturer,
-                        x=mfr_data[ColumnNames.DEFECT_TYPE],
-                        y=mfr_data["percentage"],
-                        text=mfr_data["percentage"].apply(lambda x: f"{x:.2f}%"),
-                        textposition='outside',
-                        hovertemplate='<b>%{fullData.name}</b><br>결함 유형: %{x}<br>비율: %{y:.2f}%<extra></extra>'
-                    ))
+                        fig.add_trace(go.Bar(
+                            name=manufacturer,
+                            x=mfr_data[ColumnNames.DEFECT_TYPE],
+                            y=mfr_data["percentage"],
+                            text=mfr_data["percentage"].apply(lambda x: f"{x:.2f}%"),
+                            textposition='outside',
+                            hovertemplate='<b>%{fullData.name}</b><br>결함 유형: %{x}<br>비율: %{y:.2f}%<extra></extra>'
+                        ))
 
-                fig.update_layout(
-                    barmode='group',
-                    xaxis_title="결함 유형",
-                    yaxis_title="비율 (%)",
-                    height=500,
-                    hovermode='x unified',
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1
-                    )
-                )
-
-                st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
-
-                # 상위 5개 상세 테이블
-                with st.expander("📋 상세 데이터"):
-                    top5_display = top5_df.rename(columns={
-                        "manufacturer_product": "제조사-제품군",
-                        ColumnNames.DEFECT_TYPE: "결함 유형",
-                        "count": "건수",
-                        "percentage": "비율(%)"
-                    }).sort_values(["제조사-제품군", "비율(%)"], ascending=[True, False])
-
-                    col_dl1, col_dl2 = st.columns([1, 5])
-                    with col_dl1:
-                        csv_data = top5_display.to_csv(index=False, encoding='utf-8-sig')
-                        st.download_button(
-                            label="📥 CSV 다운로드",
-                            data=csv_data,
-                            file_name=f"defect_top5_comparison_{pd.Timestamp.now():%Y%m%d_%H%M%S}.csv",
-                            mime="text/csv",
-                            key="download_defect_top5"
+                    fig.update_layout(
+                        barmode='group',
+                        xaxis_title="결함 유형",
+                        yaxis_title="비율 (%)",
+                        height=500,
+                        hovermode='x unified',
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
                         )
-
-                    # 소수점 2자리 표시 포맷 적용
-                    st.dataframe(
-                        top5_display.style.format({"비율(%)": "{:.2f}"}),
-                        width='stretch',
-                        hide_index=True
                     )
+
+                    st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
+
+                    # 상위 N개 상세 테이블
+                    with st.expander("📋 상세 데이터"):
+                        top_n_display = top_n_df.rename(columns={
+                            "manufacturer_product": "제조사-제품군",
+                            ColumnNames.DEFECT_TYPE: "결함 유형",
+                            "count": "건수",
+                            "percentage": "비율(%)"
+                        }).sort_values(["제조사-제품군", "비율(%)"], ascending=[True, False])
+
+                        col_dl1, col_dl2 = st.columns([1, 5])
+                        with col_dl1:
+                            csv_data = top_n_display.to_csv(index=False, encoding='utf-8-sig')
+                            st.download_button(
+                                label="📥 CSV 다운로드",
+                                data=csv_data,
+                                file_name=f"defect_top{top_n_defect}_comparison_{pd.Timestamp.now():%Y%m%d_%H%M%S}.csv",
+                                mime="text/csv",
+                                key="download_defect_topn"
+                            )
+
+                        # 소수점 2자리 표시 포맷 적용
+                        st.dataframe(
+                            top_n_display.style.format({"비율(%)": "{:.2f}"}),
+                            width='stretch',
+                            hide_index=True
+                        )
+                else:
+                    st.info("선택한 결함 유형에 해당하는 데이터가 없습니다.")
 
             with tab2:
                 # 1:1 비교 모드
