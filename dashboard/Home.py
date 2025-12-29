@@ -1,17 +1,23 @@
 """
 Streamlit 멀티페이지 대시보드 - 메인 홈페이지
 """
+# 1. 표준 라이브러리
 import sys
 from pathlib import Path
+from datetime import datetime
+
+# 2. 서드파티 라이브러리
 import streamlit as st
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-from millify import millify
+import pandas as pd
 import polars as pl
+
+# 3. 프로젝트 내부 탭 모듈
 import overview_tab as o_tab
 import eda_tab as e_tab
 import cluster_tab as c_tab
 import spike_tab as s_tab
+
+# 4. 프로젝트 유틸 / 설정
 from utils.dashboard_config import get_config
 from utils.constants import DisplayNames
 from dashboard.utils.custom_css import apply_custom_css
