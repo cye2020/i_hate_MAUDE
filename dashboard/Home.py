@@ -1,17 +1,22 @@
 """
 Streamlit 멀티페이지 대시보드 - 메인 홈페이지
 """
+# 1. 표준 라이브러리
 import sys
 from pathlib import Path
+from datetime import datetime
+
+# 2. 서드파티 라이브러리
 import streamlit as st
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-from millify import millify
 import polars as pl
+
+# 3. 프로젝트 내부 탭 모듈
 import overview_tab as o_tab
 import eda_tab as e_tab
 import cluster_tab as c_tab
 import spike_tab as s_tab
+
+# 4. 프로젝트 유틸 / 설정
 from utils.dashboard_config import get_config
 from utils.constants import DisplayNames
 from dashboard.utils.custom_css import apply_custom_css
@@ -46,12 +51,23 @@ def load_maude_data(cache_key: str) -> pl.DataFrame:
     """
     config = get_config()
     data_path = config.get_silver_stage3_path(dataset='maude')
+    
+    print('='*50)
+    print(data_path)
+    print('='*50)
 
-    if not data_path.exists():
-        st.error(f"데이터 파일을 찾을 수 없습니다: {data_path}")
-        st.stop()
+    # S3 사용 여부에 따라 storage_options 설정
+    storage_options = config.get_s3_storage_options()
 
-    return pl.scan_parquet(data_path)
+    if storage_options:
+        # S3 경로: 존재 체크 없이 바로 로드
+        return pl.scan_parquet(str(data_path), storage_options=storage_options)
+    else:
+        # 로컬 경로: 존재 체크 후 로드
+        if not data_path.exists():
+            st.error(f"데이터 파일을 찾을 수 없습니다: {data_path}")
+            st.stop()
+        return pl.scan_parquet(data_path)
 
 # 세션 상태 초기화
 if 'TODAY' not in st.session_state:
