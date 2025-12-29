@@ -7,7 +7,6 @@ from src.utils.utils import is_running_in_notebook, uuid5_from_str, increment_pa
 from src.utils.chunk import process_lazyframe_in_chunks, apply_mapping_to_columns
 from src.utils.calculate_token import (
     count_tokens,
-    count_tokens_gemini,
     count_tokens_openai,
     count_tokens_huggingface
 )
@@ -23,7 +22,6 @@ __all__ = [
     'process_lazyframe_in_chunks',
     'apply_mapping_to_columns',
     'count_tokens',
-    'count_tokens_gemini',
     'count_tokens_openai',
     'count_tokens_huggingface'
 ]
