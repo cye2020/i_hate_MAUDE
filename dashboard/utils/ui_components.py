@@ -792,7 +792,7 @@ def render_section_header(
 
     Example:
         >>> render_section_header(
-        ...     title="월별 보고서 수",
+        ...     title="누적 보고서 수",
         ...     icon="📊",
         ...     caption="최근 12개월 데이터"
         ... )
