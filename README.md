@@ -73,6 +73,7 @@ Project4/
 ├── notebooks/                  # Jupyter 노트북
 │   ├── 01_data_overview.ipynb
 │   ├── 02_preprocess.ipynb
+│   ├── 03_clustering_local_.ipynb
 │   ├── 04_statistical_analysis.ipynb
 │   └── 05_spike_detection.ipynb
 │
@@ -120,8 +121,7 @@ bash mdr_text_preprocess.bash
 
 ```bash
 # 클러스터링 파이프라인 실행
-# ⚠️ 주의: 현재 코드 정리 중
-# (추후 업데이트 예정)
+# (notebooks/03_clustering_local.ipynb 참고)
 ```
 
 ### 6. 대시보드 실행
